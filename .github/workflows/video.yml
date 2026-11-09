@@ -1,51 +1,99 @@
 name: Auto Video
+
 on:
-  schedule:
-    - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
-      minutes:
-        description: 'ভিডিওর দৈর্ঘ্য (মিনিট): লং ভিডিওর জন্য 5-10, শর্টসের জন্য 1'
-        required: false
-        default: '5'
-      format:
-        description: 'ভিডিওর ধরন'
-        required: false
+      mode:
+        description: 'ধাপ: voice_test (১০ সেকেন্ড), draft (দ্রুত প্রিভিউ), full (পূর্ণ)'
         type: choice
+        options: [voice_test, draft, full]
+        default: voice_test
+      minutes:
+        description: 'মিনিট'
+        default: '1'
+      seconds:
+        description: 'সেকেন্ড'
+        default: '0'
+      aspect:
+        description: 'সাইজ: landscape (YouTube), vertical (Reels), square (Facebook)'
+        type: choice
+        options: [landscape, vertical, square]
         default: landscape
-        options:
-          - landscape
-          - vertical
-      niche:
-        description: 'চ্যানেলের বিষয় (খালি রাখলে মজার ও আশ্চর্য তথ্য)'
-        required: false
+      kind:
+        description: 'ভিডিওর ধরন (রোমান্টিক, স্যাড, নিউজ, মোটিভেশন...). খালি থাকলে AI বাছবে'
+        default: ''
+      theme:
+        description: 'রঙের থিম: blue, red, green, gold, dark, pink (খালি = ডিফল্ট)'
+        default: ''
+      music:
+        description: 'মিউজিক মুড: calm, sad, epic, happy, news (খালি = ডিফল্ট)'
         default: ''
       topic:
-        description: 'টপিক (খালি রাখলে AI নিজে বেছে নেবে)'
-        required: false
+        description: 'টপিক (স্ক্রিপ্ট AI লিখবে)'
         default: ''
-permissions:
-  contents: write
-concurrency:
-  group: video
-  cancel-in-progress: false
+      script:
+        description: 'পূর্ণ স্ক্রিপ্ট (অনুচ্ছেদ আলাদা করতে || দিন). খালি থাকলে script.txt ফাইল দেখবে'
+        default: ''
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 300
+  video:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: System libs
+
+      - name: টুল ও ফন্ট
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libxrandr2 libxkbcommon-x11-0 libxfixes3 libxcomposite1 libxdamage1 libgbm-dev libcups2 libpango-1.0-0 libcairo2 libasound2t64 || sudo apt-get install -y ffmpeg libasound2
-      - name: Write files
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg fonts-noto-core fonts-beng fonts-noto-color-emoji libnss3 libdbus-1-3 libatk1.0-0 libasound2 libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 libgbm1 libcups2
+          fc-cache -f
+
+      - name: ফাইল তৈরি
         run: |
-          mkdir -p src data out
-          cat > package.json <<'EOF'
+          mkdir -p src assets
+          [ -f config.json ] || cat > config.json <<'EOF_CONFIG'
+          {
+            "geminiModel": "gemini-2.5-flash",
+            "fps": 30,
+            "wpm": 120,
+            "maxChars": 700,
+            "sizes": {"landscape": [1920, 1080], "vertical": [1080, 1920], "square": [1080, 1080]},
+            "genSize": {"landscape": [1280, 720], "vertical": [720, 1280], "square": [1024, 1024]},
+            "themes": {
+              "blue": ["#0b1f4d", "#1e66ff"],
+              "red": ["#3a0a12", "#ff3b4e"],
+              "green": ["#06281c", "#22c55e"],
+              "gold": ["#2a1c05", "#f5b301"],
+              "dark": ["#0a0a0f", "#8b5cf6"],
+              "pink": ["#3a0f2b", "#ff5fa2"]
+            },
+            "reviews": [
+              "বানান, ব্যাকরণ ও বানানো তথ্য",
+              "উচ্চারণ ও পড়ার সহজতা: speech ফিল্ডে কথ্য বাংলা, ইংরেজি শব্দ বাংলা হরফে, সংখ্যা কথায়",
+              "টপিকের সাথে মিল, ধরন অনুযায়ী টোন ও দৈর্ঘ্য"
+            ],
+            "styles": {
+              "romantic": {"speed": 0.95, "theme": "pink", "music": "calm", "imageStyle": "soft warm romantic cinematic illustration, golden hour", "sfx": false, "motion": "slow", "transition": "fade", "tone": "নরম, আবেগী, ধীর ছন্দ"},
+              "sad": {"speed": 0.9, "theme": "dark", "music": "sad", "imageStyle": "moody muted cinematic illustration, blue grey tones", "sfx": false, "motion": "slow", "transition": "fade", "tone": "ভারী, শান্ত, দীর্ঘ বিরতি"},
+              "news": {"speed": 1.05, "theme": "red", "music": "news", "imageStyle": "clean realistic editorial photo style", "sfx": true, "motion": "fast", "transition": "slide", "tone": "স্পষ্ট, তথ্যভিত্তিক, দ্রুত"},
+              "motivation": {"speed": 1.0, "theme": "gold", "music": "epic", "imageStyle": "bold cinematic dramatic illustration, warm light", "sfx": true, "motion": "fast", "transition": "zoom", "tone": "জোরালো, উদ্দীপক, ছোট বাক্য"},
+              "tutorial": {"speed": 1.05, "theme": "blue", "music": "happy", "imageStyle": "clean modern flat illustration, bright", "sfx": true, "motion": "fast", "transition": "slide", "tone": "সহজ, ধাপে ধাপে, বন্ধুসুলভ"},
+              "cartoon": {"speed": 1.0, "theme": "blue", "music": "happy", "imageStyle": "flat 2D cartoon vector illustration, light grey background", "sfx": true, "motion": "fast", "transition": "zoom", "tone": "মজার, গল্প বলার ঢং, রূপক"},
+              "data": {"speed": 1.0, "theme": "green", "music": "calm", "imageStyle": "clean infographic style illustration, maps and charts feel", "sfx": true, "motion": "slow", "transition": "slide", "tone": "তথ্য ও সংখ্যা সহ, পরিষ্কার"},
+              "general": {"speed": 1.0, "theme": "blue", "music": "calm", "imageStyle": "clean cinematic illustration", "sfx": false, "motion": "slow", "transition": "fade", "tone": "স্বাভাবিক কথ্য বন্ধুসুলভ"}
+            }
+          }
+          EOF_CONFIG
+          [ -f pronounce.json ] || cat > pronounce.json <<'EOF_PRON'
+          {
+            "words": {}
+          }
+          EOF_PRON
+          cat > package.json <<'EOF_PKG'
           {
             "name": "auto-video",
             "private": true,
@@ -53,601 +101,404 @@ jobs:
             "dependencies": {
               "remotion": "^4.0.0",
               "@remotion/cli": "^4.0.0",
-              "@remotion/renderer": "^4.0.0",
-              "@remotion/bundler": "^4.0.0",
-              "@remotion/google-fonts": "^4.0.0",
               "react": "^18.3.1",
               "react-dom": "^18.3.1"
             }
           }
-          EOF
-          cat > config.json <<'EOF'
-          {
-            "niche": "মজার ও আশ্চর্য তথ্য",
-            "language": "Bengali",
-            "minutes": 5,
-            "format": "landscape",
-            "sizes": {
-              "landscape": {
-                "w": 1280,
-                "h": 720
-              },
-              "vertical": {
-                "w": 1080,
-                "h": 1920
-              }
-            },
-            "scene_seconds": {
-              "landscape": 9,
-              "vertical": 5
-            },
-            "scenes_per_chapter": 6,
-            "fps": 30,
-            "crf": 20,
-            "concurrency": 2,
-            "music_volume": 0.1,
-            "watermark": "",
-            "gemini_model": "gemini-2.5-flash",
-            "image_style": "photorealistic, cinematic lighting, ultra detailed, sharp focus, rich colors, no text, no letters, no watermark",
-            "cartesia": {
-              "model": "sonic-3",
-              "version": "2025-04-16",
-              "language": "bn",
-              "sample_rate": 24000
-            },
-            "outline_prompt": "You are an elite documentary-style YouTube storyteller and researcher. Niche: {{niche}}. Spoken language: {{language}}. Topic: {{topic}}. Do NOT repeat these past topics: {{history}}. Plan a {{minutes}}-minute video split into exactly {{chapters}} chapters (each chapter will later be written as {{per}} narration paragraphs). Choose a topic with real, verifiable facts. Never invent statistics, names or quotes. Return ONLY valid JSON: {\"topic\":\"\",\"title\":\"max 70 chars, curiosity-driven, in the spoken language\",\"description\":\"2-3 sentences in the spoken language\",\"hashtags\":[\"5-8 tags\"],\"visual_style\":\"one English sentence describing one consistent cinematic look, colour palette and lens used for every image\",\"chapters\":[{\"title\":\"short title in the spoken language\",\"summary\":\"English, 2 sentences: the exact facts this chapter covers\"}]}",
-            "chapter_prompt": "You are a master podcast storyteller writing the narration for chapter {{index}} of {{chapters}} of the video titled '{{title}}' (topic: {{topic}}). Spoken language: {{language}}. Write like a gifted human storyteller talking to one close friend: natural conversational spoken {{language}} (colloquial, never bookish or robotic), vary sentence length, mix short punchy lines with longer flowing ones, add occasional rhetorical questions, wonder or light humour, concrete details and vivid examples. Use '...' for suspenseful pauses and ? or ! sparingly. Never sound like a list or an article, never say 'in this video'. Chapter title: {{ctitle}}. Facts to cover: {{csummary}}. The previous narration ended with: {{prev}}. {{rule}} Write exactly {{per}} scenes. Each scene text is 1-3 spoken sentences, max {{maxwords}} words. Use only well-established facts. For every scene give: emotion (one of excited, curious, surprised, sad, calm, content, scared, neutral) matching the meaning; speed (number 0.85 to 1.1: slower for serious or suspenseful lines, faster for excitement); pause_ms (150 to 700: longer after dramatic lines); image_prompt (English, a concrete literal depiction of exactly what this scene says: subject, setting, action, lighting, camera angle; no text, letters or logos; no real people's faces); keywords (1-2 important words copied exactly from the text); highlight (true for at most one very surprising scene in the chapter, else false). Return ONLY valid JSON: {\"scenes\":[{\"text\":\"\",\"emotion\":\"\",\"speed\":1,\"pause_ms\":300,\"image_prompt\":\"\",\"keywords\":[\"\"],\"highlight\":false}]}",
-            "rule_first": "Scene 1 must be a shocking, curiosity-sparking hook that makes people stay.",
-            "rule_last": "The final scene is a short, friendly call to action (like, subscribe, comment your opinion).",
-            "rule_mid": "End the chapter with a line that makes people want the next part."
-          }
-          EOF
-          cat > pipeline.mjs <<'EOF'
+          EOF_PKG
+          cat > pipeline.mjs <<'EOF_PIPE'
           import fs from 'fs';
-          import { execSync } from 'child_process';
+          import os from 'os';
+          import {execFileSync} from 'child_process';
 
+          for (const d of ['out', 'public', 'work']) fs.mkdirSync(d, {recursive: true});
           const E = process.env;
           const cfg = JSON.parse(fs.readFileSync('config.json', 'utf8'));
-          for (const d of ['data', 'out', 'tmp', 'public/audio', 'public/img']) fs.mkdirSync(d, { recursive: true });
-
-          const FORMAT = E.FORMAT === 'vertical' ? 'vertical' : 'landscape';
-          const NICHE = (E.NICHE || '').trim() || cfg.niche;
-          const MIN = Math.min(40, Math.max(0.5, parseFloat(E.MINUTES) || cfg.minutes));
-          const SZ = cfg.sizes[FORMAT];
-          const SCENE_SEC = cfg.scene_seconds[FORMAT];
-          const MAX_WORDS = Math.round(SCENE_SEC * 2.3);
-          const TOTAL_SCENES = Math.max(3, Math.round((MIN * 60) / SCENE_SEC));
-          const CHAPTERS = Math.max(1, Math.round(TOTAL_SCENES / cfg.scenes_per_chapter));
-          const PER = Math.ceil(TOTAL_SCENES / CHAPTERS);
-          const EMOS = ['excited', 'curious', 'surprised', 'sad', 'calm', 'content', 'scared', 'neutral'];
-
-          const log = (m) => {
-            const l = `[${new Date().toISOString()}] ${m}`;
-            console.log(l);
-            fs.appendFileSync('data/log.txt', l + '\n');
+          const pron = JSON.parse(fs.readFileSync('pronounce.json', 'utf8'));
+          const MODE = E.MODE || 'full';
+          const log = (...a) => {
+            const s = new Date().toISOString().slice(11, 19) + ' ' + a.join(' ');
+            console.log(s);
+            fs.appendFileSync('out/log.txt', s + '\n');
           };
-          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-          const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-          const p2 = (n) => String(n).padStart(2, '0');
-
-          async function retry(fn, n = 3, base = 4000) {
-            for (let a = 1; ; a++) {
-              try {
-                return await fn();
-              } catch (e) {
-                log(`ভুল (${a}/${n}): ${e.message}`);
-                if (a >= n) throw e;
-                await sleep(base * a);
+          const sleep = ms => new Promise(r => setTimeout(r, ms));
+          const sh = (c, a) => execFileSync(c, a, {stdio: ['ignore', 'pipe', 'pipe']}).toString();
+          async function retry(fn, n, label) {
+            for (let i = 1; ; i++) {
+              try { return await fn(); } catch (e) {
+                log(label, 'ব্যর্থ', i, String(e.message).slice(0, 200));
+                if (i >= n) throw e;
+                await sleep(2000 * i);
               }
             }
           }
-
-          function fill(t, v) {
-            let o = t;
-            for (const k of Object.keys(v)) o = o.replaceAll('{{' + k + '}}', String(v[k]));
-            return o;
-          }
-
-          async function gemini(prompt) {
-            const r = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${cfg.gemini_model}:generateContent`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': E.GEMINI_API_KEY },
-                body: JSON.stringify({
-                  contents: [{ parts: [{ text: prompt }] }],
-                  generationConfig: { responseMimeType: 'application/json', temperature: 0.9 },
-                }),
-              }
-            );
-            if (!r.ok) throw new Error('Gemini ' + r.status + ' ' + (await r.text()).slice(0, 300));
-            const j = await r.json();
-            const t = j.candidates[0].content.parts.map((p) => p.text || '').join('').replace(/^[^{]*/, '').replace(/[^}]*$/, '');
-            return JSON.parse(t);
-          }
-
-          async function makeOutline(hist) {
-            const o = await gemini(
-              fill(cfg.outline_prompt, {
-                niche: NICHE,
-                language: cfg.language,
-                topic: E.TOPIC || '(choose a fresh, fascinating topic yourself)',
-                history: hist.slice(-30).join(' | ') || 'none',
-                minutes: MIN,
-                chapters: CHAPTERS,
-                per: PER,
-              })
-            );
-            if (!Array.isArray(o.chapters) || o.chapters.length < 1) throw new Error('আউটলাইন ঠিক নয়');
-            return o;
-          }
-
-          async function makeChapter(o, idx, prev) {
-            const n = o.chapters.length;
-            const c = o.chapters[idx];
-            const rule =
-              [idx === 0 ? cfg.rule_first : '', idx === n - 1 ? cfg.rule_last : ''].filter(Boolean).join(' ') || cfg.rule_mid;
-            const s = await gemini(
-              fill(cfg.chapter_prompt, {
-                index: idx + 1,
-                chapters: n,
-                title: o.title,
-                topic: o.topic,
-                language: cfg.language,
-                ctitle: c.title,
-                csummary: c.summary,
-                prev,
-                rule,
-                per: PER,
-                maxwords: MAX_WORDS,
-              })
-            );
-            if (!Array.isArray(s.scenes)) throw new Error('চ্যাপ্টার ঠিক নয়');
-            const ok = s.scenes.filter((x) => x && typeof x.text === 'string' && x.text.trim());
-            if (!ok.length) throw new Error('চ্যাপ্টার ফাঁকা');
-            return ok;
-          }
-
-          async function ttsCall(transcript, emotion, speed, level) {
-            const body = {
-              model_id: cfg.cartesia.model,
-              transcript,
-              voice: { mode: 'id', id: E.CARTESIA_VOICE_ID },
-              language: cfg.cartesia.language,
-              output_format: { container: 'raw', encoding: 'pcm_s16le', sample_rate: cfg.cartesia.sample_rate },
-            };
-            if (level === 2) body.generation_config = { emotion, speed };
-            if (level === 1) body.generation_config = { speed };
-            const r = await fetch('https://api.cartesia.ai/tts/bytes', {
-              method: 'POST',
-              headers: {
-                'X-API-Key': E.CARTESIA_API_KEY,
-                'Cartesia-Version': cfg.cartesia.version,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(body),
-            });
-            if (!r.ok) throw new Error('Cartesia ' + r.status + ' ' + (await r.text()).slice(0, 200));
-            return Buffer.from(await r.arrayBuffer());
-          }
-
-          async function tts(text, emotion, speed) {
-            const clean = text.replace(/\s+/g, ' ').trim();
-            const paused = clean
-              .replace(/(\.\.\.|…)\s*/g, ' <break time="550ms"/> ')
-              .replace(/([।!?]+)\s+(?=\S)/g, '$1 <break time="350ms"/> ');
-            const tries = [
-              [paused, 2],
-              [clean, 1],
-              [clean, 0],
-            ];
-            let last;
-            for (const [t, lv] of tries) {
-              try {
-                return await ttsCall(t, emotion, speed, lv);
-              } catch (e) {
-                last = e;
-                log('ভয়েস ফলব্যাক: ' + e.message.slice(0, 150));
-              }
-            }
-            throw last;
-          }
-
-          function wav(pcm, sr) {
-            const h = Buffer.alloc(44);
-            h.write('RIFF', 0);
-            h.writeUInt32LE(36 + pcm.length, 4);
-            h.write('WAVE', 8);
-            h.write('fmt ', 12);
-            h.writeUInt32LE(16, 16);
-            h.writeUInt16LE(1, 20);
-            h.writeUInt16LE(1, 22);
-            h.writeUInt32LE(sr, 24);
-            h.writeUInt32LE(sr * 2, 28);
-            h.writeUInt16LE(2, 32);
-            h.writeUInt16LE(16, 34);
-            h.write('data', 36);
-            h.writeUInt32LE(pcm.length, 40);
-            return Buffer.concat([h, pcm]);
-          }
-
-          function sh(c) {
-            execSync(c, { stdio: 'pipe' });
-          }
-
-          function polish(inp, out) {
-            try {
-              sh(
-                `ffmpeg -y -i ${inp} -af "highpass=f=70,lowpass=f=14000,equalizer=f=150:t=q:w=1:g=1.5,acompressor=threshold=-20dB:ratio=3:attack=8:release=120:makeup=2,loudnorm=I=-16:TP=-1.5:LRA=9" -ar ${cfg.cartesia.sample_rate} -ac 1 ${out}`
-              );
-            } catch (e) {
-              log('ভয়েস পলিশ হয়নি, সাধারণ ভয়েস ব্যবহার হচ্ছে');
-              fs.copyFileSync(inp, out);
-            }
-          }
-
-          async function getImage(prompt, i, style) {
-            const full = `${prompt}, ${style}, ${cfg.image_style}`;
-            const models = ['flux', 'flux', 'turbo', 'turbo'];
-            let last;
-            for (let a = 0; a < models.length; a++) {
-              const seed = Math.floor(Math.random() * 1000000);
-              const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(full)}?width=${SZ.w}&height=${SZ.h}&model=${models[a]}&nologo=true&seed=${seed}`;
-              const ctl = new AbortController();
-              const to = setTimeout(() => ctl.abort(), 100000);
-              try {
-                const r = await fetch(url, { signal: ctl.signal });
-                if (!r.ok) throw new Error('Image ' + r.status);
-                if (!(r.headers.get('content-type') || '').startsWith('image')) throw new Error('Image type');
-                const b = Buffer.from(await r.arrayBuffer());
-                if (b.length < 10000) throw new Error('ছবি ছোট');
-                fs.writeFileSync(`public/img/s${i}.jpg`, b);
-                return `img/s${i}.jpg`;
-              } catch (e) {
-                last = e;
-                log(`ছবি চেষ্টা ${a + 1}/${models.length}: ${e.message}`);
-                await sleep(3000 * (a + 1));
-              } finally {
-                clearTimeout(to);
-              }
-            }
-            throw last;
-          }
-
-          function makeAudio(totalSec) {
-            const res = { music: false, whoosh: false, hit: false, ding: false };
-            const d = Math.ceil(totalSec) + 4;
-            const jobs = {
-              music: `ffmpeg -y -f lavfi -i "sine=f=110:d=${d}" -f lavfi -i "sine=f=164.81:d=${d}" -f lavfi -i "sine=f=220:d=${d}" -f lavfi -i "sine=f=261.63:d=${d}" -filter_complex "[0][1][2][3]amix=inputs=4:normalize=0,tremolo=f=0.25:d=0.4,lowpass=f=1200,aecho=0.8:0.7:500|900:0.4|0.3,volume=1.4,afade=t=in:d=3,afade=t=out:st=${d - 3}:d=3" -c:a libmp3lame -q:a 4 public/music.mp3`,
-              whoosh: `ffmpeg -y -f lavfi -i "anoisesrc=d=0.7:c=pink:a=0.6" -af "highpass=f=300,lowpass=f=4000,afade=t=in:d=0.35,afade=t=out:st=0.35:d=0.35,volume=1.2" -c:a libmp3lame -q:a 4 public/whoosh.mp3`,
-              hit: `ffmpeg -y -f lavfi -i "sine=f=60:d=1.2" -f lavfi -i "anoisesrc=d=1.2:c=brown:a=0.5" -filter_complex "[0]afade=t=out:st=0.1:d=1.1[a];[1]lowpass=f=300,afade=t=out:st=0:d=0.5[b];[a][b]amix=inputs=2:normalize=0,volume=2" -c:a libmp3lame -q:a 4 public/hit.mp3`,
-              ding: `ffmpeg -y -f lavfi -i "sine=f=1318:d=1.3" -af "afade=t=out:st=0.05:d=1.25,volume=0.7" -c:a libmp3lame -q:a 4 public/ding.mp3`,
-            };
-            const custom = { music: 'assets/music.mp3', whoosh: 'assets/whoosh.mp3', hit: 'assets/hit.mp3', ding: 'assets/ding.mp3' };
-            for (const k of Object.keys(jobs)) {
-              try {
-                if (fs.existsSync(custom[k])) fs.copyFileSync(custom[k], `public/${k}.mp3`);
-                else sh(jobs[k]);
-                res[k] = true;
-              } catch (e) {
-                log(`${k} তৈরি হয়নি: ` + String(e.message).slice(0, 120));
-              }
-            }
+          async function pool(items, n, fn) {
+            const res = []; let i = 0;
+            await Promise.all(Array.from({length: n}, async () => {
+              while (i < items.length) { const k = i++; res[k] = await fn(items[k], k); }
+            }));
             return res;
           }
-
-          const srtTime = (fr, fps) => {
-            const t = fr / fps;
-            const h = Math.floor(t / 3600);
-            const m = Math.floor((t % 3600) / 60);
-            const s = Math.floor(t % 60);
-            const ms = Math.floor((t % 1) * 1000);
-            return `${p2(h)}:${p2(m)}:${p2(s)},${String(ms).padStart(3, '0')}`;
-          };
-          const stamp = (fr, fps) => {
-            const t = Math.floor(fr / fps);
-            const h = Math.floor(t / 3600);
-            const m = Math.floor((t % 3600) / 60);
-            const s = t % 60;
-            return h ? `${h}:${p2(m)}:${p2(s)}` : `${p2(m)}:${p2(s)}`;
-          };
+          const probe = f => parseFloat(sh('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f]));
 
           async function main() {
-            log(`শুরু: ${MIN} মিনিট, ${FORMAT}, ~${TOTAL_SCENES} দৃশ্য, ${CHAPTERS} চ্যাপ্টার`);
-            const hist = fs.existsSync('data/history.json') ? JSON.parse(fs.readFileSync('data/history.json', 'utf8')) : [];
+            for (const k of ['GEMINI_API_KEY', 'CARTESIA_API_KEY', 'CARTESIA_VOICE_ID'])
+              if (!E[k]) throw new Error(k + ' Secrets-এ নেই');
 
-            log('আউটলাইন তৈরি হচ্ছে');
-            const o = await retry(() => makeOutline(hist), 4, 8000);
-            log('টপিক: ' + o.topic);
-            const style = o.visual_style || 'cinematic, natural colors';
+            const ASPECT = cfg.sizes[E.ASPECT] ? E.ASPECT : 'landscape';
+            const [W, H] = cfg.sizes[ASPECT];
+            const FPS = cfg.fps;
+            let total = (+E.MINUTES || 0) * 60 + (+E.SECONDS || 0);
+            if (!total) total = 60;
+            if (MODE === 'voice_test') total = 10;
+            const words = Math.round(total / 60 * cfg.wpm);
 
-            const all = [];
-            let prev = 'none';
-            for (let ci = 0; ci < o.chapters.length; ci++) {
-              log(`চ্যাপ্টার ${ci + 1}/${o.chapters.length} লেখা হচ্ছে`);
-              if (ci > 0) await sleep(6000);
-              const scs = await retry(() => makeChapter(o, ci, prev), 4, 8000);
-              prev = scs[scs.length - 1].text;
-              scs.forEach((s, k) => all.push({ ...s, chapter: ci, firstOfChapter: k === 0 }));
+            let userScript = (E.SCRIPT || '').trim();
+            const topic = (E.TOPIC || '').trim();
+            if (!userScript && !topic && fs.existsSync('script.txt')) userScript = fs.readFileSync('script.txt', 'utf8').trim();
+            userScript = userScript.replace(/\s*\|\|\s*/g, '\n\n');
+            if (!userScript && !topic) throw new Error('টপিক বা স্ক্রিপ্ট দিন');
+
+            async function gemini(prompt) {
+              return retry(async () => {
+                const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiModel}:generateContent`, {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json', 'x-goog-api-key': E.GEMINI_API_KEY},
+                  body: JSON.stringify({contents: [{parts: [{text: prompt}]}], generationConfig: {responseMimeType: 'application/json', temperature: 0.8}})
+                });
+                if (!r.ok) throw new Error('gemini ' + r.status + ' ' + (await r.text()).slice(0, 200));
+                const j = await r.json();
+                return JSON.parse(j.candidates[0].content.parts[0].text);
+              }, 3, 'gemini');
             }
-            log(`স্ক্রিপ্ট শেষ: ${all.length} দৃশ্য`);
 
-            const sr = cfg.cartesia.sample_rate;
-            const fps = cfg.fps;
-            let cursor = 0;
-            let lastImg = null;
-            const scenes = [];
-            for (let i = 0; i < all.length; i++) {
-              const s = all[i];
-              log(`দৃশ্য ${i + 1}/${all.length}: ভয়েস ও ছবি`);
-              const emo = EMOS.includes(s.emotion) ? s.emotion : 'content';
-              const speed = clamp(Number(s.speed) || 1, 0.8, 1.15);
-              const pause = i === all.length - 1 ? 700 : clamp(Number(s.pause_ms) || 250, 100, 1200);
-              const raw = await retry(() => tts(s.text, emo, speed), 3);
-              const pcm = Buffer.concat([raw, Buffer.alloc(Math.round((sr * pause) / 1000) * 2)]);
-              fs.writeFileSync(`tmp/s${i}.wav`, wav(pcm, sr));
-              polish(`tmp/s${i}.wav`, `public/audio/s${i}.wav`);
-              const sec = pcm.length / (sr * 2);
-              const frames = Math.ceil(sec * fps) + Math.round(fps * 0.15);
+            const tones = Object.entries(cfg.styles).map(([k, v]) => `${k}: ${v.tone}`).join('\n');
+            const kindHint = (E.KIND || '').trim() ? `ভিডিওর ধরন (ব্যবহারকারীর লেখা): ${E.KIND}` : 'ধরন খালি। টপিক পড়ে নিজে বাছুন।';
+            const SCHEMA = `শুধু JSON ফেরত দিন। গঠন: {"kind":"${Object.keys(cfg.styles).join('|')}","title":"","description":"","hashtags":["#..."],"chapters":[{"title":"ছোট চ্যাপ্টার নাম","scenes":[{"text":"পর্দার শুদ্ধ বানানের বাক্য","speech":"ভয়েসের জন্য কথ্য উচ্চারণ অনুযায়ী বানান। ইংরেজি শব্দ বাংলা হরফে, সংখ্যা কথায়","icon":"একটি ইমোজি","img":"English image prompt, literal visual of this line, no text in image"}]}]}`;
 
-              let img = null;
-              try {
-                img = await getImage(s.image_prompt || o.topic, i, style);
-                lastImg = img;
-              } catch (e) {
-                log('ছবি ব্যর্থ, আগের ছবি ব্যবহার হচ্ছে');
-                img = lastImg;
+            let kind = 'general', meta = {title: '', description: '', hashtags: []}, chapters;
+
+            if (userScript) {
+              log('পূর্ণ স্ক্রিপ্ট মোড: শব্দ বদলাবে না');
+              const paras = userScript.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+              chapters = paras.map(p => ({title: '', scenes: p.replace(/\s+/g, ' ').split(/(?<=[।?!.])\s+/).filter(Boolean).map(t => ({text: t}))}));
+              const flat = chapters.flatMap(c => c.scenes);
+              const r = await gemini(`নিচের বাক্যগুলো একটি ভিডিওর দৃশ্য। বাক্য বদলাবেন না। প্রতিটির জন্য একটি ইমোজি আইকন ও বাক্যের আক্ষরিক অর্থের English image prompt (ছবিতে লেখা থাকবে না) দিন।\n${kindHint}\nধরনের তালিকা:\n${tones}\nশুধু JSON: {"kind":"","title":"","description":"","hashtags":[],"items":[{"icon":"","img":""}]} । items সংখ্যা ঠিক ${flat.length}।\n${JSON.stringify(flat.map((s, i) => [i, s.text]))}`);
+              flat.forEach((s, i) => { s.icon = r.items?.[i]?.icon || '✨'; s.img = r.items?.[i]?.img || s.text; s.speech = s.text; });
+              kind = r.kind; meta = {title: r.title, description: r.description, hashtags: r.hashtags || []};
+            } else {
+              log('টপিক মোড: স্ক্রিপ্ট লিখছি');
+              let plan = await gemini(`আপনি বাংলা ভিডিও স্ক্রিপ্ট লেখক। টপিক: ${topic}\n${kindHint}\nমোট প্রায় ${words} শব্দ (${total} সেকেন্ড)। মানুষের মতো বন্ধুসুলভ কথ্য ভাষা। AI-সুলভ বাক্য নয়। বানানো তথ্য নয়। প্রতি চ্যাপ্টারে ৩-৫টি ছোট বাক্য (দৃশ্য)। প্রতি বাক্যের আলাদা ছবির প্রম্পট ও একটি আইকন।\nধরন অনুযায়ী টোন:\n${tones}\n${SCHEMA}`);
+              if (MODE !== 'voice_test') {
+                for (const [i, focus] of cfg.reviews.entries()) {
+                  log('রিভিউ', i + 1);
+                  const r = await gemini(`আপনি কঠোর সম্পাদক। নিচের ভিডিও স্ক্রিপ্ট JSON শুধু এই দিক থেকে রিভিউ করে ঠিক করুন: ${focus}\nগঠন ও img প্রম্পট ঠিক রাখুন, শুধু যা ভুল তা বদলান। একই গঠনের পূর্ণ JSON ফেরত দিন।\n${JSON.stringify(plan)}`);
+                  if (Array.isArray(r.chapters) && r.chapters.length) plan = r;
+                }
               }
-              await sleep(2000);
+              if (!Array.isArray(plan.chapters) || !plan.chapters.length) throw new Error('Gemini সঠিক স্ক্রিপ্ট দেয়নি');
+              chapters = plan.chapters;
+              kind = plan.kind; meta = {title: plan.title, description: plan.description, hashtags: plan.hashtags || []};
+            }
 
-              scenes.push({
-                text: s.text.trim(),
-                keywords: (Array.isArray(s.keywords) ? s.keywords : []).filter(Boolean),
-                highlight: !!s.highlight,
-                audio: `audio/s${i}.wav`,
-                img,
-                start: cursor,
-                frames,
-                chapter: s.chapter,
-                chapterTitle: s.firstOfChapter && o.chapters.length > 1 ? o.chapters[s.chapter].title : '',
+            if (!cfg.styles[kind]) kind = 'general';
+            const style = cfg.styles[kind];
+            const themeKey = cfg.themes[E.THEME] ? E.THEME : style.theme;
+            const [bg, accent] = cfg.themes[themeKey];
+            log('ধরন:', kind, '| থিম:', themeKey, '| সাইজ:', W + 'x' + H);
+
+            const applyPron = t => Object.entries(pron.words || {}).reduce((a, [k, v]) => a.split(k).join(v), t);
+            const flat = [];
+            chapters.forEach((c, ci) => c.scenes.forEach((s, k) => {
+              s.speech = applyPron(s.speech || s.text);
+              s.ci = ci; s.firstInChapter = k === 0; s.chapter = c.title || '';
+              s.icon = s.icon || '✨'; s.img = s.img || s.text;
+              flat.push(s);
+            }));
+
+            // ভয়েস গ্রুপ: পুরো অনুচ্ছেদ একসাথে, শুধু খুব লম্বা হলে ভাগ
+            let groups = [];
+            for (const c of chapters) {
+              let cur = [], len = 0;
+              for (const s of c.scenes) {
+                if (len + s.speech.length > cfg.maxChars && cur.length) { groups.push(cur); cur = []; len = 0; }
+                cur.push(s); len += s.speech.length + 1;
+              }
+              if (cur.length) groups.push(cur);
+            }
+
+            async function tts(text, file) {
+              await retry(async () => {
+                const r = await fetch('https://api.cartesia.ai/tts/bytes', {
+                  method: 'POST',
+                  headers: {'X-API-Key': E.CARTESIA_API_KEY, 'Cartesia-Version': '2025-04-16', 'Content-Type': 'application/json'},
+                  body: JSON.stringify({
+                    model_id: 'sonic-3', transcript: text, language: 'bn',
+                    voice: {mode: 'id', id: E.CARTESIA_VOICE_ID},
+                    output_format: {container: 'wav', encoding: 'pcm_s16le', sample_rate: 44100},
+                    generation_config: {speed: style.speed}
+                  })
+                });
+                if (!r.ok) throw new Error('cartesia ' + r.status + ' ' + (await r.text()).slice(0, 200));
+                fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
+              }, 3, 'cartesia');
+            }
+
+            const POLISH = 'highpass=f=70,loudnorm=I=-16:TP=-1.5:LRA=11';
+
+            if (MODE === 'voice_test') {
+              let g = [], n = 0;
+              for (const s of groups[0]) { g.push(s); n += s.speech.length; if (n >= 150) break; }
+              const text = g.map(s => s.speech).join(' ');
+              log('১০ সেকেন্ডের ভয়েস টেস্ট:', text);
+              await tts(text, 'work/vt.wav');
+              sh('ffmpeg', ['-y', '-i', 'work/vt.wav', '-af', POLISH, '-ar', '44100', '-b:a', '192k', 'out/voice_test.mp3']);
+              fs.writeFileSync('out/voice_test_text.txt', text);
+              log('শেষ: out/voice_test.mp3');
+              return;
+            }
+
+            async function ttsGroup(g, k) {
+              const f = `work/g${k}.wav`;
+              await tts(g.map(s => s.speech).join(' '), f);
+              sh('ffmpeg', ['-y', '-i', f, '-af', 'apad=pad_dur=0.25', '-ar', '44100', '-ac', '1', `work/p${k}.wav`]);
+              log('ভয়েস', k + 1, '/', groups.length);
+              return probe(`work/p${k}.wav`);
+            }
+
+            async function genImg(s, i) {
+              const [gw, gh] = cfg.genSize[ASPECT];
+              const prompt = `${s.img}, ${style.imageStyle}, no text, no letters`;
+              try {
+                await retry(async () => {
+                  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${gw}&height=${gh}&seed=${i + 7}&nologo=true`;
+                  const r = await fetch(url, {signal: AbortSignal.timeout(90000)});
+                  if (!r.ok || !(r.headers.get('content-type') || '').startsWith('image')) throw new Error('image ' + r.status);
+                  const b = Buffer.from(await r.arrayBuffer());
+                  if (b.length < 5000) throw new Error('ছবি ছোট');
+                  fs.writeFileSync(`public/img${i}.jpg`, b);
+                }, 3, 'ছবি' + i);
+                s.file = `img${i}.jpg`;
+              } catch { s.file = null; log('ছবি', i, 'ফেল: মোশন গ্রাফিক্স হবে'); }
+            }
+
+            log('ভয়েস ও ছবি একসাথে তৈরি হচ্ছে');
+            const [durs] = await Promise.all([pool(groups, 2, ttsGroup), pool(flat, 3, genImg)]);
+
+            // সময় ভাগ
+            let cum = 0; const scenes = [];
+            groups.forEach((g, k) => {
+              const sum = g.reduce((a, s) => a + s.speech.length, 0);
+              for (const s of g) {
+                const sec = durs[k] * s.speech.length / sum;
+                s.t0 = cum; s.sec = sec; cum += sec;
+              }
+            });
+            flat.forEach((s, i) => {
+              const start = Math.round(s.t0 * FPS);
+              const end = i + 1 < flat.length ? Math.round(flat[i + 1].t0 * FPS) : Math.round(cum * FPS);
+              scenes.push({idx: i, start, dur: Math.max(end - start, 10), text: s.text, words: s.text.split(/\s+/).filter(Boolean), icon: s.icon, img: s.file || null, ci: s.ci, chapter: s.firstInChapter ? s.chapter : ''});
+            });
+            const totalFrames = Math.round(cum * FPS) + 15;
+
+            // অডিও: পলিশ, মিউজিক ডাকিং, SFX
+            fs.writeFileSync('work/list.txt', groups.map((_, k) => `file 'p${k}.wav'`).join('\n'));
+            sh('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', 'work/list.txt', '-af', POLISH, '-ar', '44100', 'work/voice.wav']);
+
+            const mood = (E.MUSIC || '').trim() || style.music;
+            const music = [`assets/music_${mood}.mp3`, 'assets/music.mp3'].find(f => fs.existsSync(f));
+            if (!music) log('assets/music.mp3 নেই: শুধু ভয়েস (ও SFX) থাকবে');
+            const sfxIdx = style.sfx ? flat.map((_, i) => i).filter(i => i > 0 && i % 2 === 0) : [];
+            const args = ['-y', '-i', 'work/voice.wav'];
+            const fc = []; const mix = ['[vo]']; let n = 1;
+            let mIn = -1, wIn = -1;
+            if (music) { args.push('-stream_loop', '-1', '-i', music); mIn = n++; }
+            if (sfxIdx.length) {
+              sh('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'anoisesrc=d=0.6:c=pink:a=0.5', '-af', 'highpass=f=500,lowpass=f=4000,afade=t=in:d=0.25,afade=t=out:st=0.25:d=0.35', '-ar', '44100', 'work/whoosh.wav']);
+              args.push('-i', 'work/whoosh.wav'); wIn = n++;
+            }
+            fc.push(music ? '[0:a]asplit=2[vo][vs]' : '[0:a]anull[vo]');
+            if (music) {
+              fc.push(`[${mIn}:a]volume=0.45[mu]`);
+              fc.push('[mu][vs]sidechaincompress=threshold=0.03:ratio=10:attack=15:release=500[md]');
+              mix.push('[md]');
+            }
+            if (sfxIdx.length) {
+              const outs = sfxIdx.map((_, j) => `[w${j}]`);
+              fc.push(sfxIdx.length === 1 ? `[${wIn}:a]anull${outs[0]}` : `[${wIn}:a]asplit=${sfxIdx.length}${outs.join('')}`);
+              sfxIdx.forEach((i, j) => {
+                const ms = Math.round(flat[i].t0 * 1000);
+                fc.push(`[w${j}]volume=0.2,adelay=${ms}|${ms}[s${j}]`);
+                mix.push(`[s${j}]`);
               });
-              cursor += frames;
             }
+            fc.push(mix.length > 1 ? `${mix.join('')}amix=inputs=${mix.length}:duration=first:normalize=0[out]` : '[vo]anull[out]');
+            fs.writeFileSync('work/mix.txt', fc.join(';\n'));
+            sh('ffmpeg', [...args, '-filter_complex_script', 'work/mix.txt', '-map', '[out]', '-c:a', 'libmp3lame', '-b:a', '192k', 'public/audio.mp3']);
 
-            const a = makeAudio(cursor / fps);
-            scenes.forEach((s, i) => {
-              s.fx = i === 0 && a.hit ? 'hit.mp3' : s.highlight && a.ding ? 'ding.mp3' : a.whoosh ? 'whoosh.mp3' : null;
-              s.fxVol = s.fx === 'hit.mp3' ? 0.6 : s.fx === 'ding.mp3' ? 0.45 : 0.3;
-            });
+            // সাবটাইটেল ও মেটা
+            const ts = s => { const ms = Math.round(s * 1000), p = (x, l = 2) => String(x).padStart(l, '0'); return `${p(Math.floor(ms / 3600000))}:${p(Math.floor(ms / 60000) % 60)}:${p(Math.floor(ms / 1000) % 60)},${p(ms % 1000, 3)}`; };
+            fs.writeFileSync('out/subtitles.srt', flat.map((s, i) => `${i + 1}\n${ts(s.t0)} --> ${ts(s.t0 + s.sec)}\n${s.text}\n`).join('\n'));
+            fs.writeFileSync('out/meta.txt', `টাইটেল: ${meta.title}\n\nবর্ণনা:\n${meta.description}\n\nহ্যাশট্যাগ:\n${(meta.hashtags || []).join(' ')}\n`);
 
-            fs.writeFileSync(
-              'out/props.json',
-              JSON.stringify({
-                scenes,
-                music: a.music,
-                musicVolume: cfg.music_volume,
-                watermark: cfg.watermark,
-                totalFrames: cursor,
-                width: SZ.w,
-                height: SZ.h,
-              })
-            );
-
-            log(`রেন্ডার শুরু (${cursor} ফ্রেম, ${Math.round(cursor / fps)} সেকেন্ড)`);
-            const render = (c) =>
-              execSync(
-                `npx remotion render src/index.jsx Main out/video.mp4 --props=out/props.json --concurrency=${c} --crf=${cfg.crf} --jpeg-quality=95 --timeout=120000 --log=error`,
-                { stdio: 'inherit' }
-              );
-            try {
-              render(cfg.concurrency);
-            } catch (e) {
-              log('রেন্ডার ফেল, কম মেমোরিতে আবার চেষ্টা');
-              render(1);
-            }
-
-            let srt = '';
-            scenes.forEach((s, i) => {
-              srt += `${i + 1}\n${srtTime(s.start, fps)} --> ${srtTime(s.start + s.frames, fps)}\n${s.text}\n\n`;
-            });
-            fs.writeFileSync('out/subtitles.srt', srt);
-
-            const chapterLines = scenes.filter((s) => s.chapterTitle).map((s) => `${stamp(s.start, fps)} ${s.chapterTitle}`);
-            const desc = [o.description, chapterLines.length ? '\n' + chapterLines.join('\n') : '', '\n' + (o.hashtags || []).map((h) => '#' + String(h).replace(/^#/, '')).join(' ')]
-              .join('\n')
-              .trim();
-            fs.writeFileSync(
-              'out/info.json',
-              JSON.stringify({ title: o.title, description: desc, hashtags: o.hashtags, duration_sec: Math.round(cursor / fps) }, null, 2)
-            );
-            if (fs.existsSync('public/img/s0.jpg')) fs.copyFileSync('public/img/s0.jpg', 'out/thumbnail.jpg');
-
-            if (E.GITHUB_STEP_SUMMARY) {
-              fs.appendFileSync(E.GITHUB_STEP_SUMMARY, `### ${o.title}\nদৈর্ঘ্য: ${Math.round(cursor / fps)} সেকেন্ড, দৃশ্য: ${scenes.length}\n`);
-            }
-            log(`ভিডিও তৈরি শেষ: ${o.title} (${Math.round(cursor / fps)} সেকেন্ড)`);
-
-            hist.push(o.topic);
-            fs.writeFileSync('data/history.json', JSON.stringify(hist.slice(-100), null, 2));
+            // রেন্ডার
+            fs.writeFileSync('data.json', JSON.stringify({width: W, height: H, fps: FPS, total: totalFrames, theme: {bg, accent}, style: {motion: style.motion, transition: style.transition}, title: meta.title, scenes}));
+            const rargs = ['remotion', 'render', 'src/index.jsx', 'Video', 'out/video.mp4', '--props=data.json', '--codec=h264', '--concurrency=' + os.cpus().length, '--log=error'];
+            if (MODE === 'draft') rargs.push('--scale=0.5', '--crf=32'); else rargs.push('--crf=23');
+            log('রেন্ডার শুরু:', MODE, '| ফ্রেম:', totalFrames);
+            execFileSync('npx', rargs, {stdio: 'inherit'});
+            sh('ffmpeg', ['-y', '-ss', '1', '-i', 'out/video.mp4', '-frames:v', '1', '-q:v', '2', 'out/thumbnail.jpg']);
+            log('শেষ: out/video.mp4');
           }
 
-          main().catch((e) => {
-            log('চূড়ান্ত ব্যর্থ: ' + e.message);
-            process.exit(1);
-          });
-          EOF
-          cat > src/index.jsx <<'EOF'
+          main().catch(e => { log('ত্রুটি:', e.message); process.exit(1); });
+          EOF_PIPE
+          cat > src/index.jsx <<'EOF_JSX'
           import React from 'react';
-          import {
-            registerRoot, Composition, AbsoluteFill, Sequence, Audio, Img, staticFile,
-            useCurrentFrame, useVideoConfig, interpolate, spring,
-          } from 'remotion';
-          import { loadFont } from '@remotion/google-fonts/NotoSansBengali';
+          import {registerRoot, Composition, Sequence, AbsoluteFill, Img, Audio, staticFile, useCurrentFrame, useVideoConfig, interpolate, spring} from 'remotion';
 
-          const { fontFamily } = loadFont('normal', { weights: ['700'], subsets: ['bengali', 'latin'] });
-          const BG = ['#1b1f3b', '#3b1f2b', '#1f3b2e', '#2b2b52'];
-          const OV = 8;
+          const FONT = '"Noto Sans Bengali","Noto Sans",sans-serif';
+          const EMOJI = '"Noto Color Emoji",sans-serif';
 
-          const Scene = ({ s, i, total, wm }) => {
+          const MotionBG = ({i, theme}) => {
             const f = useCurrentFrame();
-            const { width, height, fps } = useVideoConfig();
-            const land = width > height;
-            const p = Math.min(1, f / s.frames);
-            const mode = i % 4;
-            const zoomIn = mode === 0 || mode === 2;
-            const scale = zoomIn ? 1.1 + 0.2 * p : 1.3 - 0.2 * p;
-            const px = interpolate(p, [0, 1], mode === 1 ? [40, -40] : mode === 3 ? [-40, 40] : [0, 0]);
-            const py = interpolate(p, [0, 1], mode === 0 ? [25, -25] : mode === 2 ? [-25, 25] : [0, 0]);
-            const punch = interpolate(f, [0, OV], [1.15, 1], { extrapolateRight: 'clamp' });
-            const fade = interpolate(f, [0, OV], [0, 1], { extrapolateRight: 'clamp' });
-            const flash = i % 3 === 0 ? interpolate(f, [0, 4, OV], [0.45, 0.2, 0], { extrapolateRight: 'clamp' }) : 0;
-            const words = s.text.split(/\s+/);
-            const n = words.length;
-            const kws = s.keywords || [];
-            const bounce = Math.sin(f / 5) * 14;
-            const chA = interpolate(f, [0, 10, 70, 90], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-            const prog = Math.min(100, ((s.start + f) / total) * 100);
-
+            const {width: w, height: h} = useVideoConfig();
+            const size = Math.max(w, h) * 0.6;
             return (
-              <AbsoluteFill style={{ opacity: fade, overflow: 'hidden' }}>
-                {s.img ? (
-                  <Img
-                    src={staticFile(s.img)}
-                    style={{
-                      width: '100%', height: '100%', objectFit: 'cover',
-                      transform: `scale(${scale * punch}) translate(${px}px, ${py}px)`,
-                    }}
-                  />
-                ) : (
-                  <AbsoluteFill style={{ background: `linear-gradient(160deg, ${BG[i % 4]}, #000)`, transform: `scale(${scale})` }} />
-                )}
-                <AbsoluteFill style={{ background: 'linear-gradient(transparent 45%, rgba(0,0,0,.8))' }} />
-                <AbsoluteFill
-                  style={{
-                    background: `radial-gradient(circle at ${50 + 20 * Math.sin(f / 40)}% ${40 + 10 * Math.cos(f / 50)}%, rgba(255,255,255,.08), rgba(0,0,0,.45) 85%)`,
-                  }}
-                />
-                {s.highlight && (
-                  <div style={{ position: 'absolute', left: '50%', bottom: land ? '30%' : '36%', transform: `translate(-50%, ${bounce}px)` }}>
-                    <svg width={width * (land ? 0.07 : 0.14)} height={width * (land ? 0.07 : 0.14)} viewBox="0 0 100 100">
-                      <path d="M50 92 L12 46 H38 V8 H62 V46 H88 Z" fill="#FFE23A" />
-                    </svg>
-                  </div>
-                )}
-                {s.chapterTitle ? (
-                  <div
-                    style={{
-                      position: 'absolute', top: '7%', left: '6%', opacity: chA,
-                      fontFamily, fontWeight: 700, color: '#000', background: '#FFE23A',
-                      fontSize: width * (land ? 0.028 : 0.045), padding: '0.25em 0.7em', borderRadius: 14,
-                    }}
-                  >
-                    {s.chapterTitle}
-                  </div>
-                ) : null}
-                <div
-                  style={{
-                    position: 'absolute', left: land ? '10%' : '6%', right: land ? '10%' : '6%', bottom: land ? '9%' : '12%',
-                    display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
-                    gap: `0 ${width * 0.015}px`, fontFamily, fontWeight: 700,
-                    fontSize: width * (land ? 0.04 : 0.07), lineHeight: 1.4, color: '#fff',
-                    textShadow: '0 4px 18px rgba(0,0,0,.9)',
-                  }}
-                >
-                  {words.map((w, k) => {
-                    const at = Math.round((k / n) * s.frames * 0.85);
-                    const sp = spring({ frame: f - at, fps, config: { damping: 12, stiffness: 180 } });
-                    const key = kws.some((x) => x && w.includes(x));
-                    return (
-                      <span
-                        key={k}
-                        style={{
-                          opacity: Math.min(1, sp * 3),
-                          transform: `translateY(${(1 - sp) * 40}px) scale(${0.6 + 0.4 * sp})`,
-                          color: key ? '#FFE23A' : '#fff',
-                          background: key ? 'rgba(0,0,0,.4)' : 'none',
-                          borderRadius: 12, padding: '0 .15em',
-                        }}
-                      >
-                        {w}
-                      </span>
-                    );
-                  })}
-                </div>
-                {wm ? (
-                  <div style={{ position: 'absolute', right: '4%', top: '4%', fontFamily, fontWeight: 700, color: 'rgba(255,255,255,.7)', fontSize: width * (land ? 0.02 : 0.035) }}>
-                    {wm}
-                  </div>
-                ) : null}
-                <div style={{ position: 'absolute', left: 0, top: 0, height: 6, width: `${prog}%`, background: '#FFE23A' }} />
-                <AbsoluteFill style={{ background: '#fff', opacity: flash }} />
-                <Audio src={staticFile(s.audio)} />
-                {s.fx ? <Audio src={staticFile(s.fx)} volume={s.fxVol || 0.3} /> : null}
+              <AbsoluteFill style={{background: `linear-gradient(${135 + i * 25}deg, ${theme.bg}, ${theme.accent})`}}>
+                {[0, 1, 2, 3].map(k => {
+                  const a = f / 70 + k * 1.7 + i;
+                  return (
+                    <div key={k} style={{
+                      position: 'absolute',
+                      left: (0.5 + 0.35 * Math.sin(a * 0.9 + k)) * w - size / 2,
+                      top: (0.5 + 0.35 * Math.cos(a * 0.7 + k * 2)) * h - size / 2,
+                      width: size, height: size, borderRadius: '50%',
+                      background: `radial-gradient(circle, ${k % 2 ? theme.accent : '#ffffff'}55 0%, transparent 70%)`
+                    }} />
+                  );
+                })}
               </AbsoluteFill>
             );
           };
 
-          const Main = ({ scenes, music, musicVolume, totalFrames, watermark }) => (
-            <AbsoluteFill style={{ background: '#000' }}>
-              {music ? <Audio src={staticFile('music.mp3')} volume={musicVolume} loop /> : null}
-              {scenes.map((s, i) => (
-                <Sequence key={i} from={s.start} durationInFrames={s.frames + OV}>
-                  <Scene s={s} i={i} total={totalFrames} wm={watermark} />
-                </Sequence>
-              ))}
-            </AbsoluteFill>
-          );
+          const Photo = ({src, i, dur, motion}) => {
+            const f = useCurrentFrame();
+            const amp = motion === 'fast' ? 0.16 : 0.09;
+            const p = Math.min(1, f / dur);
+            const m = i % 4;
+            const scale = m === 0 ? 1 + amp * p : m === 1 ? 1 + amp - amp * p : 1 + amp * 0.6;
+            const tx = m === 2 ? interpolate(p, [0, 1], [-3, 3]) : m === 3 ? interpolate(p, [0, 1], [3, -3]) : 0;
+            return (
+              <AbsoluteFill style={{overflow: 'hidden'}}>
+                <Img src={staticFile(src)} style={{width: '100%', height: '100%', objectFit: 'cover', transform: `translateX(${tx}%) scale(${scale * 1.08})`}} />
+                <AbsoluteFill style={{background: 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.35) 100%)', transform: `translateX(${tx * -1.5}%)`}} />
+              </AbsoluteFill>
+            );
+          };
 
-          const Root = () => (
+          const Caption = ({words, f, dur, fs, portrait}) => {
+            const lens = words.map(w => w.length + 1);
+            const sum = lens.reduce((a, b) => a + b, 0);
+            const p = Math.max(0, Math.min(1, (f - 3) / Math.max(1, dur - 8)));
+            let acc = 0, cur = 0;
+            for (let k = 0; k < words.length; k++) { acc += lens[k]; if (p * sum <= acc) { cur = k; break; } cur = k; }
+            return (
+              <div style={{
+                position: 'absolute', left: '6%', right: '6%', bottom: portrait ? '14%' : '8%',
+                padding: '2.5% 4%', borderRadius: 28, background: 'rgba(0,0,0,0.55)',
+                display: 'flex', flexWrap: 'wrap', justifyContent: 'center', columnGap: fs * 0.3,
+                fontFamily: FONT, fontWeight: 700, fontSize: fs, lineHeight: 1.4, textAlign: 'center'
+              }}>
+                {words.map((w, k) => (
+                  <span key={k} style={{color: k === cur ? '#FFD93B' : k < cur ? '#ffffff' : 'rgba(255,255,255,0.55)'}}>{w}</span>
+                ))}
+              </div>
+            );
+          };
+
+          const Icon = ({icon, fs}) => {
+            const f = useCurrentFrame();
+            const {fps} = useVideoConfig();
+            const s = spring({frame: f - 8, fps, config: {damping: 9}});
+            const bob = Math.sin(f / 12) * 6;
+            return (
+              <div style={{position: 'absolute', top: '9%', right: '8%', fontSize: fs * 2.2, fontFamily: EMOJI, transform: `scale(${s}) translateY(${bob}px)`, filter: 'drop-shadow(0 6px 12px rgba(0,0,0,0.4))'}}>{icon}</div>
+            );
+          };
+
+          const SceneView = ({s, theme, style, fs, portrait}) => {
+            const f = useCurrentFrame();
+            const t = style.motion === 'fast' ? 6 : 10;
+            const op = interpolate(f, [0, t], [0, 1], {extrapolateRight: 'clamp'});
+            let tf = 'none';
+            if (style.transition === 'slide') tf = `translateX(${interpolate(f, [0, t], [6, 0], {extrapolateRight: 'clamp'})}%)`;
+            if (style.transition === 'zoom') tf = `scale(${interpolate(f, [0, t], [1.06, 1], {extrapolateRight: 'clamp'})})`;
+            const chip = interpolate(f, [0, 20], [0, 1], {extrapolateRight: 'clamp'});
+            return (
+              <AbsoluteFill style={{opacity: op, transform: tf}}>
+                {s.img ? <Photo src={s.img} i={s.idx} dur={s.dur} motion={style.motion} /> : <MotionBG i={s.idx} theme={theme} />}
+                {s.chapter ? (
+                  <div style={{position: 'absolute', top: '5%', left: '6%', padding: '10px 28px', borderRadius: 40, background: theme.accent, color: '#fff', fontFamily: FONT, fontWeight: 700, fontSize: fs * 0.55, opacity: chip}}>{s.chapter}</div>
+                ) : null}
+                <Icon icon={s.icon} fs={fs} />
+                <Caption words={s.words} f={f} dur={s.dur} fs={fs} portrait={portrait} />
+              </AbsoluteFill>
+            );
+          };
+
+          const Video = ({scenes, theme, style}) => {
+            const {width: w, height: h} = useVideoConfig();
+            const fs = Math.round(Math.min(w, h) * 0.058);
+            const portrait = h > w;
+            return (
+              <AbsoluteFill style={{background: theme.bg}}>
+                {scenes.map(s => (
+                  <Sequence key={s.idx} from={s.start} durationInFrames={s.dur}>
+                    <SceneView s={s} theme={theme} style={style} fs={fs} portrait={portrait} />
+                  </Sequence>
+                ))}
+                <Audio src={staticFile('audio.mp3')} />
+              </AbsoluteFill>
+            );
+          };
+
+          registerRoot(() => (
             <Composition
-              id="Main"
-              component={Main}
+              id="Video"
+              component={Video}
               durationInFrames={300}
               fps={30}
-              width={1280}
-              height={720}
-              defaultProps={{ scenes: [], music: false, musicVolume: 0.1, totalFrames: 300, width: 1280, height: 720, watermark: '' }}
-              calculateMetadata={({ props }) => ({
-                durationInFrames: Math.max(1, props.totalFrames),
-                width: props.width,
-                height: props.height,
-              })}
+              width={1920}
+              height={1080}
+              defaultProps={{scenes: [], theme: {bg: '#0b1f4d', accent: '#1e66ff'}, style: {motion: 'slow', transition: 'fade'}}}
+              calculateMetadata={({props}) => ({durationInFrames: props.total || 300, fps: props.fps || 30, width: props.width || 1920, height: props.height || 1080})}
             />
-          );
+          ));
+          EOF_JSX
 
-          registerRoot(Root);
-          EOF
-      - name: Install
+      - name: Remotion ইনস্টল
         run: npm install --no-audit --no-fund
-      - name: Make video
-        env:
-          GEMINI_API_KEY: AQ.Ab8RN6L3ur7EqwGO0S7g5jU-u4u_iCJBS80iNIQTSTFckPnMQQ
-          CARTESIA_API_KEY: sk_car_m5jw9NPS6U9vDokjDaU8mr
-          CARTESIA_VOICE_ID: a17970ca-acfb-4189-abbd-55b678db4961
-          MINUTES: ${{ github.event.inputs.minutes || '5' }}
-          FORMAT: ${{ github.event.inputs.format || 'landscape' }}
-          NICHE: ${{ github.event.inputs.niche }}
-          TOPIC: ${{ github.event.inputs.topic }}
+
+      - name: ভিডিও তৈরি
         run: node pipeline.mjs
-      - name: Save log
-        if: always()
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add data
-          git commit -m "log update" || true
-          git pull --rebase || true
-          git push || true
-      - name: Video download
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
+          CARTESIA_VOICE_ID: ${{ secrets.CARTESIA_VOICE_ID }}
+          MODE: ${{ inputs.mode }}
+          MINUTES: ${{ inputs.minutes }}
+          SECONDS: ${{ inputs.seconds }}
+          ASPECT: ${{ inputs.aspect }}
+          KIND: ${{ inputs.kind }}
+          THEME: ${{ inputs.theme }}
+          MUSIC: ${{ inputs.music }}
+          TOPIC: ${{ inputs.topic }}
+          SCRIPT: ${{ inputs.script }}
+
+      - name: আউটপুট আপলোড
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: video
-          path: |
-            out/video.mp4
-            out/info.json
-            out/subtitles.srt
-            out/thumbnail.jpg
-            data/
-          retention-days: 30
-          if-no-files-found: ignore
+          name: video-output
+          path: out/
