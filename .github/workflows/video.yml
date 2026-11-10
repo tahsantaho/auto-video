@@ -44,7 +44,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: টুল ও ফন্ট
         run: |
@@ -88,6 +88,47 @@ jobs:
             }
           }
           EOF_CONFIG
+          [ -f providers.json ] || cat > providers.json <<'EOF_PROV'
+          {
+           "_help": "on:false দিলে সার্ভিস বন্ধ। ক্রম বদলালে অগ্রাধিকার বদলায়। চাবি (Secret) না থাকলে সার্ভিস নিজে বাদ পড়ে। কোনো পেইড সার্ভিস এখানে নেই। শুধু GEMINI_API_KEY, CARTESIA_API_KEY, CARTESIA_VOICE_ID থাকলেই পুরো সিস্টেম চলে, বাকিগুলো ঐচ্ছিক।",
+           "mediaOrder": ["footage", "image"],
+           "footageSkipKinds": ["cartoon", "data"],
+           "script": [
+            {"type": "gemini", "model": "gemini-2.5-flash"},
+            {"type": "gemini", "model": "gemini-2.5-flash-lite"},
+            {"type": "gemini", "model": "gemini-2.0-flash"},
+            {"type": "http_chat", "name": "groq", "url": "https://api.groq.com/openai/v1/chat/completions", "secret": "GROQ_API_KEY", "model": "llama-3.3-70b-versatile"},
+            {"type": "http_chat", "name": "openrouter", "url": "https://openrouter.ai/api/v1/chat/completions", "secret": "OPENROUTER_API_KEY", "model": "MODEL_ID_WITH_:free", "on": false},
+            {"type": "http_chat", "name": "cerebras", "url": "https://api.cerebras.ai/v1/chat/completions", "secret": "CEREBRAS_API_KEY", "model": "MODEL_ID", "on": false}
+           ],
+           "voice": [
+            {"type": "cartesia", "model": "sonic-3"},
+            {"type": "cartesia", "model": "sonic-3", "speed": false},
+            {"type": "cartesia", "model": "sonic-2", "speed": false}
+           ],
+           "image": [
+            {"type": "pollinations", "model": "flux"},
+            {"type": "pollinations", "model": "turbo"},
+            {"type": "pollinations", "model": "", "simple": true},
+            {"type": "pixabay"},
+            {"type": "pexels"},
+            {"type": "http_image", "name": "my_image_service", "url": "https://example.com/gen?q={prompt}&w={w}&h={h}&key={key}", "secret": "MY_IMAGE_KEY", "on": false}
+           ],
+           "footage": [
+            {"type": "pixabay"},
+            {"type": "pexels", "on": false}
+           ],
+           "music": [
+            {"type": "url", "url": "", "on": false},
+            {"type": "synth"}
+           ],
+           "render": [
+            {"name": "পূর্ণ গতি", "concurrency": "auto", "x264": "veryfast"},
+            {"name": "কম লোড", "concurrency": 2},
+            {"name": "ড্রাফট মান", "concurrency": 2, "scale": 0.5}
+           ]
+          }
+          EOF_PROV
           [ -f pronounce.json ] || cat > pronounce.json <<'EOF_PRON'
           {
             "words": {}
@@ -107,6 +148,7 @@ jobs:
           }
           EOF_PKG
           cat > pipeline.mjs <<'EOF_PIPE'
+          // Auto Video v3 pipeline (providers.json চেইন-ফলব্যাক, ফুটেজ, synth মিউজিক, রেন্ডার ফলব্যাক)
           import fs from 'fs';
           import os from 'os';
           import {execFileSync} from 'child_process';
@@ -122,7 +164,7 @@ jobs:
             fs.appendFileSync('out/log.txt', s + '\n');
           };
           const sleep = ms => new Promise(r => setTimeout(r, ms));
-          const sh = (c, a) => execFileSync(c, a, {stdio: ['ignore', 'pipe', 'pipe']}).toString();
+          const sh = (c, a) => execFileSync(c, c === 'ffmpeg' ? ['-hide_banner', '-loglevel', 'error', ...a] : a, {stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28}).toString();
           async function retry(fn, n, label) {
             for (let i = 1; ; i++) {
               try { return await fn(); } catch (e) {
@@ -141,9 +183,174 @@ jobs:
           }
           const probe = f => parseFloat(sh('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f]));
 
+          // ---------- providers ----------
+          const DEFAULT_P = {
+            mediaOrder: ['footage', 'image'],
+            footageSkipKinds: ['cartoon', 'data'],
+            script: [
+              {type: 'gemini', model: 'gemini-2.5-flash'},
+              {type: 'gemini', model: 'gemini-2.5-flash-lite'},
+              {type: 'gemini', model: 'gemini-2.0-flash'},
+              {type: 'http_chat', name: 'groq', url: 'https://api.groq.com/openai/v1/chat/completions', secret: 'GROQ_API_KEY', model: 'llama-3.3-70b-versatile'},
+              {type: 'http_chat', name: 'openrouter', url: 'https://openrouter.ai/api/v1/chat/completions', secret: 'OPENROUTER_API_KEY', model: 'MODEL_ID_WITH_:free', on: false},
+              {type: 'http_chat', name: 'cerebras', url: 'https://api.cerebras.ai/v1/chat/completions', secret: 'CEREBRAS_API_KEY', model: 'MODEL_ID', on: false}
+            ],
+            voice: [
+              {type: 'cartesia', model: 'sonic-3'},
+              {type: 'cartesia', model: 'sonic-3', speed: false},
+              {type: 'cartesia', model: 'sonic-2', speed: false}
+            ],
+            image: [
+              {type: 'pollinations', model: 'flux'},
+              {type: 'pollinations', model: 'turbo'},
+              {type: 'pollinations', model: '', simple: true},
+              {type: 'pixabay'},
+              {type: 'pexels'},
+              {type: 'http_image', name: 'my_image_service', url: 'https://example.com/gen?q={prompt}&w={w}&h={h}&key={key}', secret: 'MY_IMAGE_KEY', on: false}
+            ],
+            footage: [
+              {type: 'pixabay'},
+              {type: 'pexels', on: false}
+            ],
+            music: [
+              {type: 'url', url: '', on: false},
+              {type: 'synth'}
+            ],
+            render: [
+              {name: 'পূর্ণ গতি', concurrency: 'auto', x264: 'veryfast'},
+              {name: 'কম লোড', concurrency: 2},
+              {name: 'ড্রাফট মান', concurrency: 2, scale: 0.5}
+            ]
+          };
+          let P = JSON.parse(JSON.stringify(DEFAULT_P));
+          if (fs.existsSync('providers.json')) {
+            try { P = {...P, ...JSON.parse(fs.readFileSync('providers.json', 'utf8'))}; log('providers.json পড়া হয়েছে'); }
+            catch (e) { log('providers.json ভুল, ডিফল্ট চলবে:', e.message); }
+          } else log('providers.json নেই: ডিফল্ট তালিকা চলবে');
+
+          const used = {};
+          const pref = {};
+          const SECRET = {gemini: 'GEMINI_API_KEY', cartesia: 'CARTESIA_API_KEY', pixabay: 'PIXABAY_API_KEY', pexels: 'PEXELS_API_KEY'};
+          const secretOf = p => p.secret || SECRET[p.type] || null;
+          const nameOf = p => p.name || (p.type + (p.model ? ':' + p.model : '') + (p.simple ? ':simple' : '') + (p.speed === false ? ':nospeed' : ''));
+          const activeList = list => (list || []).filter(p => p.on !== false && (!secretOf(p) || E[secretOf(p)]));
+          function ordered(label, list) {
+            const a = activeList(list);
+            const k = a.findIndex(p => nameOf(p) === pref[label]);
+            return k > 0 ? [a[k], ...a.slice(0, k), ...a.slice(k + 1)] : a;
+          }
+          async function chain(label, list, fn, validate) {
+            const a = ordered(label, list);
+            if (!a.length) throw new Error(label + ': কোনো সক্রিয় সার্ভিস নেই');
+            let last = '';
+            for (const p of a) {
+              const nm = nameOf(p);
+              try {
+                const r = await retry(async () => {
+                  const x = await fn(p);
+                  if (validate && !validate(x)) throw new Error('ফলাফল ঠিক নয়');
+                  return x;
+                }, p.retries || 2, label + '/' + nm);
+                used[label] = used[label] || {};
+                used[label][nm] = (used[label][nm] || 0) + 1;
+                pref[label] = nm;
+                return r;
+              } catch (e) { last = String(e.message).slice(0, 150); log(label, nm, 'বাদ, পরের সার্ভিস:', last); }
+            }
+            throw new Error(label + ': সব সার্ভিস ব্যর্থ (' + last + ')');
+          }
+
+          async function fetchOk(url, T, headers) {
+            const r = await fetch(url, {headers, signal: AbortSignal.timeout(T)});
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r;
+          }
+          async function getBin(url, o = {}) {
+            const r = await fetchOk(url, o.timeout || 45000, o.headers);
+            const ct = r.headers.get('content-type') || '';
+            if (o.type && !ct.startsWith(o.type)) throw new Error('ধরন ভুল: ' + ct.slice(0, 40));
+            const b = Buffer.from(await r.arrayBuffer());
+            if (b.length < (o.min || 5000)) throw new Error('ফাইল ছোট');
+            return b;
+          }
+          const pick = (arr, i) => (arr && arr.length ? arr[i % Math.min(arr.length, 5)] : null);
+          const kwOf = s => String(s.kw || s.img || s.text || '').split(/[\s,]+/).filter(Boolean).slice(0, 4).join(' ');
+          const fill = (t, v) => String(t).replace(/\{(\w+)\}/g, (_, k) => (k === 'prompt' ? encodeURIComponent(v[k] || '') : (v[k] ?? '')));
+          function parseJson(t) {
+            try { return JSON.parse(t); } catch {}
+            const c = String(t).replace(/```json|```/g, '');
+            const a = c.indexOf('{'), b = c.lastIndexOf('}');
+            return JSON.parse(c.slice(a, b + 1));
+          }
+
+          // ---------- স্ক্রিপ্ট (LLM) ----------
+          async function callLLM(p, prompt) {
+            if (p.type === 'gemini') {
+              const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${p.model}:generateContent`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'x-goog-api-key': E.GEMINI_API_KEY},
+                body: JSON.stringify({contents: [{parts: [{text: prompt}]}], generationConfig: {responseMimeType: 'application/json', temperature: 0.8}}),
+                signal: AbortSignal.timeout(120000)
+              });
+              if (!r.ok) throw new Error('gemini ' + r.status + ' ' + (await r.text()).slice(0, 150));
+              const j = await r.json();
+              return parseJson(j.candidates[0].content.parts[0].text);
+            }
+            if (p.type === 'http_chat') {
+              const body = {model: p.model, messages: [{role: 'user', content: prompt}], temperature: 0.8};
+              if (p.json !== false) body.response_format = {type: 'json_object'};
+              const r = await fetch(p.url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + E[secretOf(p)]},
+                body: JSON.stringify(body),
+                signal: AbortSignal.timeout(120000)
+              });
+              if (!r.ok) throw new Error(nameOf(p) + ' ' + r.status + ' ' + (await r.text()).slice(0, 150));
+              const j = await r.json();
+              return parseJson(j.choices[0].message.content);
+            }
+            throw new Error('অজানা স্ক্রিপ্ট ধরন: ' + p.type);
+          }
+          const llm = (prompt, validate) => chain('স্ক্রিপ্ট', P.script, p => callLLM(p, prompt), validate);
+
+          // ---------- synth মিউজিক ----------
+          const SYN = {
+            calm: {f: [196, 246.94, 293.66, 98], trem: 0.25, depth: 0.5},
+            sad: {f: [220, 261.63, 329.63, 110], trem: 0.2, depth: 0.5},
+            epic: {f: [146.83, 220, 293.66, 73.42], trem: 2, depth: 0.35},
+            happy: {f: [261.63, 329.63, 392, 130.81], trem: 3, depth: 0.3},
+            news: {f: [233.08, 293.66, 349.23, 116.54], trem: 2, depth: 0.3}
+          };
+          function synth(mood) {
+            const m = SYN[mood] || SYN.calm;
+            const args = ['-y'];
+            m.f.forEach(f => args.push('-f', 'lavfi', '-i', `sine=frequency=${f}:duration=20:sample_rate=44100`));
+            const ins = m.f.map((_, k) => `[${k}:a]`).join('');
+            args.push('-filter_complex', `${ins}amix=inputs=${m.f.length}:normalize=0,volume=0.2,tremolo=f=${m.trem}:d=${m.depth},lowpass=f=1800,aecho=0.8:0.6:500:0.3,afade=t=in:d=0.05,afade=t=out:st=19.95:d=0.05[o]`, '-map', '[o]', '-t', '20', 'work/synth.wav');
+            sh('ffmpeg', args);
+            return 'work/synth.wav';
+          }
+          async function pickMusic(mood) {
+            const local = [`assets/music_${mood}.mp3`, 'assets/music.mp3'].find(f => fs.existsSync(f));
+            if (local) { log('মিউজিক: আপনার ফাইল', local); used['মিউজিক'] = {[local]: 1}; return local; }
+            try {
+              return await chain('মিউজিক', P.music, async p => {
+                if (p.type === 'url') {
+                  if (!p.url) throw new Error('url খালি');
+                  fs.writeFileSync('work/music_dl.mp3', await getBin(p.url, {timeout: 60000, min: 50000}));
+                  if (!(probe('work/music_dl.mp3') > 5)) throw new Error('মিউজিক ফাইল ঠিক নয়');
+                  return 'work/music_dl.mp3';
+                }
+                if (p.type === 'synth') return synth(mood);
+                throw new Error('অজানা মিউজিক ধরন');
+              });
+            } catch (e) { log('মিউজিক নেই:', e.message); return null; }
+          }
+
           async function main() {
-            for (const k of ['GEMINI_API_KEY', 'CARTESIA_API_KEY', 'CARTESIA_VOICE_ID'])
+            for (const k of ['CARTESIA_API_KEY', 'CARTESIA_VOICE_ID'])
               if (!E[k]) throw new Error(k + ' Secrets-এ নেই');
+            if (!activeList(P.script).length) throw new Error('কোনো স্ক্রিপ্ট সার্ভিস সক্রিয় নেই (GEMINI_API_KEY দিন)');
 
             const ASPECT = cfg.sizes[E.ASPECT] ? E.ASPECT : 'landscape';
             const [W, H] = cfg.sizes[ASPECT];
@@ -159,22 +366,10 @@ jobs:
             userScript = userScript.replace(/\s*\|\|\s*/g, '\n\n');
             if (!userScript && !topic) throw new Error('টপিক বা স্ক্রিপ্ট দিন');
 
-            async function gemini(prompt) {
-              return retry(async () => {
-                const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiModel}:generateContent`, {
-                  method: 'POST',
-                  headers: {'Content-Type': 'application/json', 'x-goog-api-key': E.GEMINI_API_KEY},
-                  body: JSON.stringify({contents: [{parts: [{text: prompt}]}], generationConfig: {responseMimeType: 'application/json', temperature: 0.8}})
-                });
-                if (!r.ok) throw new Error('gemini ' + r.status + ' ' + (await r.text()).slice(0, 200));
-                const j = await r.json();
-                return JSON.parse(j.candidates[0].content.parts[0].text);
-              }, 3, 'gemini');
-            }
-
             const tones = Object.entries(cfg.styles).map(([k, v]) => `${k}: ${v.tone}`).join('\n');
             const kindHint = (E.KIND || '').trim() ? `ভিডিওর ধরন (ব্যবহারকারীর লেখা): ${E.KIND}` : 'ধরন খালি। টপিক পড়ে নিজে বাছুন।';
-            const SCHEMA = `শুধু JSON ফেরত দিন। গঠন: {"kind":"${Object.keys(cfg.styles).join('|')}","title":"","description":"","hashtags":["#..."],"chapters":[{"title":"ছোট চ্যাপ্টার নাম","scenes":[{"text":"পর্দার শুদ্ধ বানানের বাক্য","speech":"ভয়েসের জন্য কথ্য উচ্চারণ অনুযায়ী বানান। ইংরেজি শব্দ বাংলা হরফে, সংখ্যা কথায়","icon":"একটি ইমোজি","img":"English image prompt, literal visual of this line, no text in image"}]}]}`;
+            const SCHEMA = `শুধু JSON ফেরত দিন। গঠন: {"kind":"${Object.keys(cfg.styles).join('|')}","title":"","description":"","hashtags":["#..."],"chapters":[{"title":"ছোট চ্যাপ্টার নাম","scenes":[{"text":"পর্দার শুদ্ধ বানানের বাক্য","speech":"ভয়েসের জন্য কথ্য উচ্চারণ অনুযায়ী বানান। ইংরেজি শব্দ বাংলা হরফে, সংখ্যা কথায়","icon":"একটি ইমোজি","img":"English image prompt, literal visual of this line, no text in image","kw":"2-3 English keywords for stock photo/video search"}]}]}`;
+            const okPlan = r => Array.isArray(r.chapters) && r.chapters.length > 0;
 
             let kind = 'general', meta = {title: '', description: '', hashtags: []}, chapters;
 
@@ -182,23 +377,26 @@ jobs:
               log('পূর্ণ স্ক্রিপ্ট মোড: শব্দ বদলাবে না');
               const paras = userScript.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
               chapters = paras.map(p => ({title: '', scenes: p.replace(/\s+/g, ' ').split(/(?<=[।?!.])\s+/).filter(Boolean).map(t => ({text: t}))}));
-              const flat = chapters.flatMap(c => c.scenes);
-              const r = await gemini(`নিচের বাক্যগুলো একটি ভিডিওর দৃশ্য। বাক্য বদলাবেন না। প্রতিটির জন্য একটি ইমোজি আইকন ও বাক্যের আক্ষরিক অর্থের English image prompt (ছবিতে লেখা থাকবে না) দিন।\n${kindHint}\nধরনের তালিকা:\n${tones}\nশুধু JSON: {"kind":"","title":"","description":"","hashtags":[],"items":[{"icon":"","img":""}]} । items সংখ্যা ঠিক ${flat.length}।\n${JSON.stringify(flat.map((s, i) => [i, s.text]))}`);
-              flat.forEach((s, i) => { s.icon = r.items?.[i]?.icon || '✨'; s.img = r.items?.[i]?.img || s.text; s.speech = s.text; });
-              kind = r.kind; meta = {title: r.title, description: r.description, hashtags: r.hashtags || []};
+              const flat0 = chapters.flatMap(c => c.scenes);
+              let r = {items: []};
+              try {
+                r = await llm(`নিচের বাক্যগুলো একটি ভিডিওর দৃশ্য। বাক্য বদলাবেন না। প্রতিটির জন্য একটি ইমোজি আইকন, বাক্যের আক্ষরিক অর্থের English image prompt (ছবিতে লেখা থাকবে না) ও স্টক ছবি/ভিডিও খোঁজার ২-৩টি English কিওয়ার্ড (kw) দিন।\n${kindHint}\nধরনের তালিকা:\n${tones}\nশুধু JSON: {"kind":"","title":"","description":"","hashtags":[],"items":[{"icon":"","img":"","kw":""}]} । items সংখ্যা ঠিক ${flat0.length}।\n${JSON.stringify(flat0.map((s, i) => [i, s.text]))}`, x => Array.isArray(x.items));
+              } catch (e) { log('আইকন/ছবির প্রম্পট পাওয়া গেল না, ডিফল্ট চলবে:', e.message); }
+              flat0.forEach((s, i) => { s.icon = r.items?.[i]?.icon || '✨'; s.img = r.items?.[i]?.img || s.text; s.kw = r.items?.[i]?.kw || ''; s.speech = s.text; });
+              kind = r.kind || 'general'; meta = {title: r.title || '', description: r.description || '', hashtags: r.hashtags || []};
             } else {
               log('টপিক মোড: স্ক্রিপ্ট লিখছি');
-              let plan = await gemini(`আপনি বাংলা ভিডিও স্ক্রিপ্ট লেখক। টপিক: ${topic}\n${kindHint}\nমোট প্রায় ${words} শব্দ (${total} সেকেন্ড)। মানুষের মতো বন্ধুসুলভ কথ্য ভাষা। AI-সুলভ বাক্য নয়। বানানো তথ্য নয়। প্রতি চ্যাপ্টারে ৩-৫টি ছোট বাক্য (দৃশ্য)। প্রতি বাক্যের আলাদা ছবির প্রম্পট ও একটি আইকন।\nধরন অনুযায়ী টোন:\n${tones}\n${SCHEMA}`);
+              let plan = await llm(`আপনি বাংলা ভিডিও স্ক্রিপ্ট লেখক। টপিক: ${topic}\n${kindHint}\nমোট প্রায় ${words} শব্দ (${total} সেকেন্ড)। মানুষের মতো বন্ধুসুলভ কথ্য ভাষা। AI-সুলভ বাক্য নয়। বানানো তথ্য নয়। প্রতি চ্যাপ্টারে ৩-৫টি ছোট বাক্য (দৃশ্য)। প্রতি বাক্যের আলাদা ছবির প্রম্পট, একটি আইকন ও kw।\nধরন অনুযায়ী টোন:\n${tones}\n${SCHEMA}`, okPlan);
               if (MODE !== 'voice_test') {
                 for (const [i, focus] of cfg.reviews.entries()) {
                   log('রিভিউ', i + 1);
-                  const r = await gemini(`আপনি কঠোর সম্পাদক। নিচের ভিডিও স্ক্রিপ্ট JSON শুধু এই দিক থেকে রিভিউ করে ঠিক করুন: ${focus}\nগঠন ও img প্রম্পট ঠিক রাখুন, শুধু যা ভুল তা বদলান। একই গঠনের পূর্ণ JSON ফেরত দিন।\n${JSON.stringify(plan)}`);
-                  if (Array.isArray(r.chapters) && r.chapters.length) plan = r;
+                  try {
+                    plan = await llm(`আপনি কঠোর সম্পাদক। নিচের ভিডিও স্ক্রিপ্ট JSON শুধু এই দিক থেকে রিভিউ করে ঠিক করুন: ${focus}\nগঠন, img ও kw ঠিক রাখুন, শুধু যা ভুল তা বদলান। একই গঠনের পূর্ণ JSON ফেরত দিন।\n${JSON.stringify(plan)}`, okPlan);
+                  } catch (e) { log('রিভিউ', i + 1, 'বাদ: আগের স্ক্রিপ্টই থাকল'); }
                 }
               }
-              if (!Array.isArray(plan.chapters) || !plan.chapters.length) throw new Error('Gemini সঠিক স্ক্রিপ্ট দেয়নি');
               chapters = plan.chapters;
-              kind = plan.kind; meta = {title: plan.title, description: plan.description, hashtags: plan.hashtags || []};
+              kind = plan.kind || 'general'; meta = {title: plan.title || '', description: plan.description || '', hashtags: plan.hashtags || []};
             }
 
             if (!cfg.styles[kind]) kind = 'general';
@@ -216,7 +414,6 @@ jobs:
               flat.push(s);
             }));
 
-            // ভয়েস গ্রুপ: পুরো অনুচ্ছেদ একসাথে, শুধু খুব লম্বা হলে ভাগ
             let groups = [];
             for (const c of chapters) {
               let cur = [], len = 0;
@@ -227,21 +424,29 @@ jobs:
               if (cur.length) groups.push(cur);
             }
 
+            // ---------- ভয়েস ----------
+            async function cartesia(p, text) {
+              if (p.type !== 'cartesia') throw new Error('অজানা ভয়েস ধরন: ' + p.type);
+              const body = {
+                model_id: p.model || 'sonic-3', transcript: text, language: 'bn',
+                voice: {mode: 'id', id: E.CARTESIA_VOICE_ID},
+                output_format: {container: 'wav', encoding: 'pcm_s16le', sample_rate: 44100}
+              };
+              if (p.speed !== false) body.generation_config = {speed: style.speed};
+              const r = await fetch('https://api.cartesia.ai/tts/bytes', {
+                method: 'POST',
+                headers: {'X-API-Key': E.CARTESIA_API_KEY, 'Cartesia-Version': '2025-04-16', 'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+                signal: AbortSignal.timeout(120000)
+              });
+              if (!r.ok) throw new Error('cartesia ' + r.status + ' ' + (await r.text()).slice(0, 150));
+              const b = Buffer.from(await r.arrayBuffer());
+              if (b.length < 2000) throw new Error('ভয়েস ফাইল ছোট');
+              return b;
+            }
             async function tts(text, file) {
-              await retry(async () => {
-                const r = await fetch('https://api.cartesia.ai/tts/bytes', {
-                  method: 'POST',
-                  headers: {'X-API-Key': E.CARTESIA_API_KEY, 'Cartesia-Version': '2025-04-16', 'Content-Type': 'application/json'},
-                  body: JSON.stringify({
-                    model_id: 'sonic-3', transcript: text, language: 'bn',
-                    voice: {mode: 'id', id: E.CARTESIA_VOICE_ID},
-                    output_format: {container: 'wav', encoding: 'pcm_s16le', sample_rate: 44100},
-                    generation_config: {speed: style.speed}
-                  })
-                });
-                if (!r.ok) throw new Error('cartesia ' + r.status + ' ' + (await r.text()).slice(0, 200));
-                fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
-              }, 3, 'cartesia');
+              const b = await chain('ভয়েস', P.voice, p => cartesia(p, text));
+              fs.writeFileSync(file, b);
             }
 
             const POLISH = 'highpass=f=70,loudnorm=I=-16:TP=-1.5:LRA=11';
@@ -254,6 +459,8 @@ jobs:
               await tts(text, 'work/vt.wav');
               sh('ffmpeg', ['-y', '-i', 'work/vt.wav', '-af', POLISH, '-ar', '44100', '-b:a', '192k', 'out/voice_test.mp3']);
               fs.writeFileSync('out/voice_test_text.txt', text);
+              fs.writeFileSync('out/paths.json', JSON.stringify(used, null, 1));
+              log('কোন পথ চলল:', JSON.stringify(used));
               log('শেষ: out/voice_test.mp3');
               return;
             }
@@ -266,26 +473,89 @@ jobs:
               return probe(`work/p${k}.wav`);
             }
 
-            async function genImg(s, i) {
-              const [gw, gh] = cfg.genSize[ASPECT];
-              const prompt = `${s.img}, ${style.imageStyle}, no text, no letters`;
-              try {
-                await retry(async () => {
-                  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${gw}&height=${gh}&seed=${i + 7}&nologo=true`;
-                  const r = await fetch(url, {signal: AbortSignal.timeout(90000)});
-                  if (!r.ok || !(r.headers.get('content-type') || '').startsWith('image')) throw new Error('image ' + r.status);
-                  const b = Buffer.from(await r.arrayBuffer());
-                  if (b.length < 5000) throw new Error('ছবি ছোট');
-                  fs.writeFileSync(`public/img${i}.jpg`, b);
-                }, 3, 'ছবি' + i);
-                s.file = `img${i}.jpg`;
-              } catch { s.file = null; log('ছবি', i, 'ফেল: মোশন গ্রাফিক্স হবে'); }
+            // ---------- ছবি ও ফুটেজ ----------
+            const [gw, gh] = cfg.genSize[ASPECT];
+            const ORI = ASPECT === 'vertical' ? 'portrait' : ASPECT === 'square' ? 'square' : 'landscape';
+            const PXORI = ASPECT === 'vertical' ? 'vertical' : ASPECT === 'square' ? 'all' : 'horizontal';
+
+            async function imgFrom(p, s, i) {
+              const T = (p.timeout || 45) * 1000;
+              const full = `${s.img}, ${style.imageStyle}, no text, no letters`;
+              if (p.type === 'pollinations') {
+                const q = p.simple ? kwOf(s) : full;
+                let url = `https://image.pollinations.ai/prompt/${encodeURIComponent(q)}?width=${gw}&height=${gh}&seed=${i + 7}&nologo=true`;
+                if (p.model) url += '&model=' + p.model;
+                return getBin(url, {timeout: T, type: 'image'});
+              }
+              if (p.type === 'pixabay') {
+                const q = encodeURIComponent(kwOf(s)).slice(0, 100);
+                const j = await (await fetchOk(`https://pixabay.com/api/?key=${E[secretOf(p)]}&q=${q}&image_type=photo&orientation=${PXORI}&per_page=6&safesearch=true`, T)).json();
+                const hit = pick(j.hits, i);
+                if (!hit) throw new Error('Pixabay-তে ছবি নেই');
+                return getBin(hit.largeImageURL || hit.webformatURL, {timeout: T, type: 'image'});
+              }
+              if (p.type === 'pexels') {
+                const q = encodeURIComponent(kwOf(s));
+                const j = await (await fetchOk(`https://api.pexels.com/v1/search?query=${q}&per_page=6&orientation=${ORI}`, T, {Authorization: E[secretOf(p)]})).json();
+                const hit = pick(j.photos, i);
+                if (!hit) throw new Error('Pexels-এ ছবি নেই');
+                return getBin(hit.src.large2x || hit.src.large, {timeout: T, type: 'image'});
+              }
+              if (p.type === 'http_image') {
+                const v = {prompt: full, w: gw, h: gh, seed: i + 7, key: E[secretOf(p)] || ''};
+                const headers = {};
+                for (const [k, val] of Object.entries(p.headers || {})) headers[k] = fill(val, v);
+                return getBin(fill(p.url, v), {timeout: T, type: 'image', headers});
+              }
+              throw new Error('অজানা ছবির ধরন: ' + p.type);
             }
 
-            log('ভয়েস ও ছবি একসাথে তৈরি হচ্ছে');
-            const [durs] = await Promise.all([pool(groups, 2, ttsGroup), pool(flat, 3, genImg)]);
+            async function clipFrom(p, s, i) {
+              const T = (p.timeout || 90) * 1000;
+              if (p.type === 'pixabay') {
+                const q = encodeURIComponent(kwOf(s)).slice(0, 100);
+                const j = await (await fetchOk(`https://pixabay.com/api/videos/?key=${E[secretOf(p)]}&q=${q}&per_page=6&safesearch=true`, 30000)).json();
+                const hit = pick(j.hits, i);
+                if (!hit) throw new Error('Pixabay-তে ফুটেজ নেই');
+                const v = hit.videos.medium || hit.videos.small || hit.videos.large;
+                if (!v || !v.url) throw new Error('ফুটেজ লিংক নেই');
+                return getBin(v.url, {timeout: T, type: 'video', min: 20000});
+              }
+              if (p.type === 'pexels') {
+                const q = encodeURIComponent(kwOf(s));
+                const j = await (await fetchOk(`https://api.pexels.com/videos/search?query=${q}&per_page=6&orientation=${ORI}`, 30000, {Authorization: E[secretOf(p)]})).json();
+                const hit = pick(j.videos, i);
+                if (!hit) throw new Error('Pexels-এ ফুটেজ নেই');
+                const files = (hit.video_files || []).filter(f => f.file_type === 'video/mp4').sort((a, b) => Math.abs(a.width - 1280) - Math.abs(b.width - 1280));
+                if (!files.length) throw new Error('ফুটেজ লিংক নেই');
+                return getBin(files[0].link, {timeout: T, type: 'video', min: 20000});
+              }
+              throw new Error('অজানা ফুটেজ ধরন: ' + p.type);
+            }
 
-            // সময় ভাগ
+            async function getMedia(s, i) {
+              for (const m of (P.mediaOrder || ['footage', 'image'])) {
+                if (m === 'footage') {
+                  if ((P.footageSkipKinds || []).includes(kind)) continue;
+                  if (!activeList(P.footage).length) continue;
+                  try {
+                    const b = await chain('ফুটেজ', P.footage, p => clipFrom(p, s, i));
+                    s.raw = `work/raw${i}.mp4`; fs.writeFileSync(s.raw, b); return;
+                  } catch {}
+                } else if (m === 'image') {
+                  if (!activeList(P.image).length) continue;
+                  try {
+                    const b = await chain('ছবি', P.image, p => imgFrom(p, s, i));
+                    s.file = `img${i}.jpg`; fs.writeFileSync(`public/${s.file}`, b); return;
+                  } catch {}
+                }
+              }
+              log('দৃশ্য', i, ': ছবি/ফুটেজ নেই, মোশন গ্রাফিক্স হবে');
+            }
+
+            log('ভয়েস ও ছবি/ফুটেজ একসাথে তৈরি হচ্ছে');
+            const [durs] = await Promise.all([pool(groups, 2, ttsGroup), pool(flat, 4, getMedia)]);
+
             let cum = 0; const scenes = [];
             groups.forEach((g, k) => {
               const sum = g.reduce((a, s) => a + s.speech.length, 0);
@@ -297,17 +567,26 @@ jobs:
             flat.forEach((s, i) => {
               const start = Math.round(s.t0 * FPS);
               const end = i + 1 < flat.length ? Math.round(flat[i + 1].t0 * FPS) : Math.round(cum * FPS);
-              scenes.push({idx: i, start, dur: Math.max(end - start, 10), text: s.text, words: s.text.split(/\s+/).filter(Boolean), icon: s.icon, img: s.file || null, ci: s.ci, chapter: s.firstInChapter ? s.chapter : ''});
+              scenes.push({idx: i, start, dur: Math.max(end - start, 10), text: s.text, words: s.text.split(/\s+/).filter(Boolean), icon: s.icon, img: s.file || null, clip: null, ci: s.ci, chapter: s.firstInChapter ? s.chapter : ''});
             });
             const totalFrames = Math.round(cum * FPS) + 15;
 
-            // অডিও: পলিশ, মিউজিক ডাকিং, SFX
+            await pool(flat, 3, async (s, i) => {
+              if (!s.raw) return;
+              try {
+                sh('ffmpeg', ['-y', '-stream_loop', '-1', '-i', s.raw, '-t', (scenes[i].dur / FPS).toFixed(2), '-an',
+                  '-vf', `fps=${FPS},scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1`,
+                  '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-pix_fmt', 'yuv420p', `public/clip${i}.mp4`]);
+                scenes[i].clip = `clip${i}.mp4`;
+              } catch (e) { log('ক্লিপ', i, 'ছাঁটা ফেল: মোশন গ্রাফিক্স হবে', String(e.message).slice(0, 100)); }
+            });
+
+            // ---------- অডিও ----------
             fs.writeFileSync('work/list.txt', groups.map((_, k) => `file 'p${k}.wav'`).join('\n'));
             sh('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', 'work/list.txt', '-af', POLISH, '-ar', '44100', 'work/voice.wav']);
 
             const mood = (E.MUSIC || '').trim() || style.music;
-            const music = [`assets/music_${mood}.mp3`, 'assets/music.mp3'].find(f => fs.existsSync(f));
-            if (!music) log('assets/music.mp3 নেই: শুধু ভয়েস (ও SFX) থাকবে');
+            const music = await pickMusic(mood);
             const sfxIdx = style.sfx ? flat.map((_, i) => i).filter(i => i > 0 && i % 2 === 0) : [];
             const args = ['-y', '-i', 'work/voice.wav'];
             const fc = []; const mix = ['[vo]']; let n = 1;
@@ -336,31 +615,71 @@ jobs:
             fs.writeFileSync('work/mix.txt', fc.join(';\n'));
             sh('ffmpeg', [...args, '-filter_complex_script', 'work/mix.txt', '-map', '[out]', '-c:a', 'libmp3lame', '-b:a', '192k', 'public/audio.mp3']);
 
-            // সাবটাইটেল ও মেটা
             const ts = s => { const ms = Math.round(s * 1000), p = (x, l = 2) => String(x).padStart(l, '0'); return `${p(Math.floor(ms / 3600000))}:${p(Math.floor(ms / 60000) % 60)}:${p(Math.floor(ms / 1000) % 60)},${p(ms % 1000, 3)}`; };
             fs.writeFileSync('out/subtitles.srt', flat.map((s, i) => `${i + 1}\n${ts(s.t0)} --> ${ts(s.t0 + s.sec)}\n${s.text}\n`).join('\n'));
             fs.writeFileSync('out/meta.txt', `টাইটেল: ${meta.title}\n\nবর্ণনা:\n${meta.description}\n\nহ্যাশট্যাগ:\n${(meta.hashtags || []).join(' ')}\n`);
 
-            // রেন্ডার
-            fs.writeFileSync('data.json', JSON.stringify({width: W, height: H, fps: FPS, total: totalFrames, theme: {bg, accent}, style: {motion: style.motion, transition: style.transition}, title: meta.title, scenes}));
-            const rargs = ['remotion', 'render', 'src/index.jsx', 'Video', 'out/video.mp4', '--props=data.json', '--codec=h264', '--concurrency=' + os.cpus().length, '--log=error'];
-            if (MODE === 'draft') rargs.push('--scale=0.5', '--crf=32'); else rargs.push('--crf=23');
-            log('রেন্ডার শুরু:', MODE, '| ফ্রেম:', totalFrames);
-            execFileSync('npx', rargs, {stdio: 'inherit'});
-            sh('ffmpeg', ['-y', '-ss', '1', '-i', 'out/video.mp4', '-frames:v', '1', '-q:v', '2', 'out/thumbnail.jpg']);
+            // ---------- রেন্ডার ----------
+            fs.writeFileSync('data.json', JSON.stringify({width: W, height: H, fps: FPS, total: totalFrames, theme: {bg, accent}, style: {motion: style.motion, transition: style.transition, kind}, title: meta.title, scenes}));
+            const presets = activeList(P.render).length ? activeList(P.render) : [{name: 'ডিফল্ট', concurrency: 'auto'}];
+            let done = false;
+            for (const p of presets) {
+              const rargs = ['remotion', 'render', 'src/index.jsx', 'Video', 'out/video.mp4', '--props=data.json', '--codec=h264', '--log=error'];
+              rargs.push('--concurrency=' + (p.concurrency === 'auto' || !p.concurrency ? os.cpus().length : p.concurrency));
+              if (p.x264) rargs.push('--x264-preset=' + p.x264);
+              const sc = p.scale || (MODE === 'draft' ? 0.5 : 0);
+              if (sc) rargs.push('--scale=' + sc);
+              rargs.push('--crf=' + (MODE === 'draft' ? 32 : (p.crf || 23)));
+              log('রেন্ডার চেষ্টা:', p.name || '', '|', MODE, '| ফ্রেম:', totalFrames);
+              try {
+                execFileSync('npx', rargs, {stdio: 'inherit'});
+                used['রেন্ডার'] = {[p.name || 'ডিফল্ট']: 1};
+                done = true; break;
+              } catch (e) {
+                log('রেন্ডার ব্যর্থ:', p.name || '', String(e.message).slice(0, 150));
+                fs.rmSync('out/video.mp4', {force: true});
+              }
+            }
+            if (!done) throw new Error('সব রেন্ডার প্রিসেট ব্যর্থ');
+            try { sh('ffmpeg', ['-y', '-ss', '1', '-i', 'out/video.mp4', '-frames:v', '1', '-q:v', '2', 'out/thumbnail.jpg']); } catch (e) { log('থাম্বনেইল ফেল'); }
+            fs.writeFileSync('out/paths.json', JSON.stringify(used, null, 1));
+            log('কোন পথ চলল:', JSON.stringify(used));
             log('শেষ: out/video.mp4');
           }
 
-          main().catch(e => { log('ত্রুটি:', e.message); process.exit(1); });
+          main().catch(e => { log('ত্রুটি:', e.message); log('কোন পথ চলল (ত্রুটির আগ পর্যন্ত):', JSON.stringify(used)); process.exit(1); });
           EOF_PIPE
           cat > src/index.jsx <<'EOF_JSX'
           import React from 'react';
-          import {registerRoot, Composition, Sequence, AbsoluteFill, Img, Audio, staticFile, useCurrentFrame, useVideoConfig, interpolate, spring} from 'remotion';
+          import {registerRoot, Composition, Sequence, AbsoluteFill, Img, OffthreadVideo, Audio, staticFile, useCurrentFrame, useVideoConfig, interpolate, spring} from 'remotion';
 
-          const FONT = '"Noto Sans Bengali","Noto Sans",sans-serif';
+          const SANS = '"Noto Sans Bengali","Noto Sans",sans-serif';
+          const SERIF = '"Noto Serif Bengali","Noto Serif","Noto Sans Bengali",serif';
+          const ANI = '"Ani","Noto Sans Bengali",sans-serif';
+          const RUPALI = '"Siyam Rupali","Noto Sans Bengali",sans-serif';
           const EMOJI = '"Noto Color Emoji",sans-serif';
+          const FONTS = {tutorial: SANS, data: SANS, news: SERIF, romantic: SERIF, sad: SERIF, motivation: RUPALI, cartoon: ANI, general: SANS};
+          const fontOf = k => (FONTS[k] || SANS) + ',' + EMOJI;
 
-          const MotionBG = ({i, theme}) => {
+          const clean = w => w.replace(/[।,?!.:;"'“”‘’()\-–—]/g, '');
+          const RED = new Set(['না', 'নয়', 'ভুল', 'মিথ্যা', 'বিপদ', 'সমস্যা', 'ক্ষতি', 'ঝুঁকি', 'সাবধান', 'কম', 'হারান', 'ব্যর্থ', 'খারাপ', 'ভয়', 'সতর্ক', 'বন্ধ']);
+          const GREEN = new Set(['সত্য', 'সঠিক', 'লাভ', 'সফল', 'সহজ', 'ভালো', 'নিরাপদ', 'বেশি', 'সুযোগ', 'সাফল্য', 'ফ্রি', 'বিনামূল্যে', 'দারুণ', 'জিতুন']);
+          const STAMP_RED = new Set(['ভুল', 'মিথ্যা', 'বিপদ', 'সাবধান', 'ব্যর্থ']);
+          const STAMP_GREEN = new Set(['সত্য', 'সঠিক', 'সফল', 'নিরাপদ']);
+
+          const toEn = s => String(s).replace(/[০-৯]/g, d => '০১২৩৪৫৬৭৮৯'.indexOf(d));
+          const toBn = s => String(s).replace(/\d/g, d => '০১২৩৪৫৬৭৮৯'[+d]);
+
+          const parseNum = text => {
+            const m = String(text).match(/[0-9০-৯][0-9০-৯,.]*\s*(%|শতাংশ)?/);
+            if (!m) return null;
+            const raw = (m[1] ? m[0].replace(m[1], '') : m[0]).trim();
+            const v = parseFloat(toEn(raw).replace(/,/g, ''));
+            if (!isFinite(v)) return null;
+            return {v, pct: !!m[1], bn: /[০-৯]/.test(m[0]), year: !m[1] && Number.isInteger(v) && v >= 1900 && v <= 2100};
+          };
+
+          const MotionBG = ({i, theme, icon}) => {
             const f = useCurrentFrame();
             const {width: w, height: h} = useVideoConfig();
             const size = Math.max(w, h) * 0.6;
@@ -378,6 +697,49 @@ jobs:
                     }} />
                   );
                 })}
+                {[0, 1, 2, 3, 4, 5].map(k => (
+                  <div key={'e' + k} style={{
+                    position: 'absolute',
+                    left: (0.1 + 0.8 * ((k * 0.37 + f / 600) % 1)) * w,
+                    top: (0.15 + 0.7 * ((k * 0.23 + 0.5) % 1)) * h + Math.sin(f / 20 + k) * 20,
+                    fontSize: Math.min(w, h) * 0.09, fontFamily: EMOJI, opacity: 0.16, transform: `rotate(${Math.sin(f / 30 + k) * 15}deg)`
+                  }}>{icon}</div>
+                ))}
+              </AbsoluteFill>
+            );
+          };
+
+          const POLYS = [
+            [[10, 10], [45, 6], [50, 30], [28, 38], [8, 30]],
+            [[45, 6], [90, 12], [85, 34], [50, 30]],
+            [[8, 30], [28, 38], [32, 62], [10, 58]],
+            [[28, 38], [50, 30], [85, 34], [78, 60], [55, 58], [32, 62]],
+            [[10, 58], [32, 62], [55, 58], [60, 88], [22, 90]],
+            [[55, 58], [78, 60], [88, 86], [60, 88]]
+          ];
+          const REGIONS = ['উত্তর', 'পূর্ব', 'পশ্চিম', 'মধ্য', 'দক্ষিণ', 'উপকূল'];
+
+          const MapBG = ({i, theme, fs, font}) => {
+            const f = useCurrentFrame();
+            const {width: w, height: h} = useVideoConfig();
+            const zoom = interpolate(f, [0, 120], [1, 1.18], {extrapolateRight: 'clamp'});
+            const hi = i % 6;
+            const pulse = 0.55 + 0.25 * Math.sin(f / 8);
+            const side = Math.min(w, h) * 0.9;
+            return (
+              <AbsoluteFill style={{background: `linear-gradient(160deg, ${theme.bg}, #000)`, alignItems: 'center', justifyContent: 'center'}}>
+                <svg width={side} height={side} viewBox="0 0 100 100" style={{transform: `scale(${zoom})`}}>
+                  {POLYS.map((p, k) => {
+                    const cx = p.reduce((a, q) => a + q[0], 0) / p.length;
+                    const cy = p.reduce((a, q) => a + q[1], 0) / p.length;
+                    return (
+                      <g key={k}>
+                        <polygon points={p.map(q => q.join(',')).join(' ')} fill={k === hi ? theme.accent : '#ffffff'} fillOpacity={k === hi ? pulse : 0.12 + (k % 3) * 0.06} stroke="#ffffff" strokeWidth="0.6" />
+                        <text x={cx} y={cy} fill="#ffffff" fontSize="4.2" fontFamily={font} fontWeight="700" textAnchor="middle">{REGIONS[k]}</text>
+                      </g>
+                    );
+                  })}
+                </svg>
               </AbsoluteFill>
             );
           };
@@ -386,33 +748,54 @@ jobs:
             const f = useCurrentFrame();
             const amp = motion === 'fast' ? 0.16 : 0.09;
             const p = Math.min(1, f / dur);
-            const m = i % 4;
-            const scale = m === 0 ? 1 + amp * p : m === 1 ? 1 + amp - amp * p : 1 + amp * 0.6;
-            const tx = m === 2 ? interpolate(p, [0, 1], [-3, 3]) : m === 3 ? interpolate(p, [0, 1], [3, -3]) : 0;
+            const m = i % 6;
+            let sc = 1.12, tx = 0, ty = 0;
+            if (m === 0) sc = 1.08 + amp * p;
+            else if (m === 1) sc = 1.08 + amp - amp * p;
+            else if (m === 2) { sc = 1.14; tx = interpolate(p, [0, 1], [-3, 3]); }
+            else if (m === 3) { sc = 1.14; tx = interpolate(p, [0, 1], [3, -3]); }
+            else if (m === 4) { sc = 1.14; ty = interpolate(p, [0, 1], [3, -3]); }
+            else { sc = 1.08 + amp * p; tx = interpolate(p, [0, 1], [-2, 2]); }
             return (
               <AbsoluteFill style={{overflow: 'hidden'}}>
-                <Img src={staticFile(src)} style={{width: '100%', height: '100%', objectFit: 'cover', transform: `translateX(${tx}%) scale(${scale * 1.08})`}} />
-                <AbsoluteFill style={{background: 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.35) 100%)', transform: `translateX(${tx * -1.5}%)`}} />
+                <Img src={staticFile(src)} style={{width: '100%', height: '100%', objectFit: 'cover', transform: `translate(${tx}%, ${ty}%) scale(${sc})`}} />
+                <AbsoluteFill style={{background: 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.4) 100%)'}} />
+                <AbsoluteFill style={{background: 'radial-gradient(circle at 30% 30%, rgba(255,255,255,0.12), transparent 40%)', transform: `translateX(${tx * -4}%)`}} />
               </AbsoluteFill>
             );
           };
 
-          const Caption = ({words, f, dur, fs, portrait}) => {
+          const Clip = ({src, dur}) => {
+            const f = useCurrentFrame();
+            const p = Math.min(1, f / dur);
+            return (
+              <AbsoluteFill style={{overflow: 'hidden'}}>
+                <OffthreadVideo src={staticFile(src)} muted style={{width: '100%', height: '100%', objectFit: 'cover', transform: `scale(${1.03 + 0.04 * p})`}} />
+                <AbsoluteFill style={{background: 'linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.4) 100%)'}} />
+              </AbsoluteFill>
+            );
+          };
+
+          const Caption = ({words, f, dur, fs, portrait, font}) => {
             const lens = words.map(w => w.length + 1);
             const sum = lens.reduce((a, b) => a + b, 0);
             const p = Math.max(0, Math.min(1, (f - 3) / Math.max(1, dur - 8)));
-            let acc = 0, cur = 0;
-            for (let k = 0; k < words.length; k++) { acc += lens[k]; if (p * sum <= acc) { cur = k; break; } cur = k; }
+            let acc = 0, cur = words.length - 1;
+            for (let k = 0; k < words.length; k++) { acc += lens[k]; if (p * sum <= acc) { cur = k; break; } }
             return (
               <div style={{
                 position: 'absolute', left: '6%', right: '6%', bottom: portrait ? '14%' : '8%',
                 padding: '2.5% 4%', borderRadius: 28, background: 'rgba(0,0,0,0.55)',
                 display: 'flex', flexWrap: 'wrap', justifyContent: 'center', columnGap: fs * 0.3,
-                fontFamily: FONT, fontWeight: 700, fontSize: fs, lineHeight: 1.4, textAlign: 'center'
+                fontFamily: font, fontWeight: 700, fontSize: fs, lineHeight: 1.4, textAlign: 'center'
               }}>
-                {words.map((w, k) => (
-                  <span key={k} style={{color: k === cur ? '#FFD93B' : k < cur ? '#ffffff' : 'rgba(255,255,255,0.55)'}}>{w}</span>
-                ))}
+                {words.map((w, k) => {
+                  const c = clean(w);
+                  let color = k === cur ? '#FFD93B' : k < cur ? '#ffffff' : 'rgba(255,255,255,0.55)';
+                  if (RED.has(c)) color = k > cur ? 'rgba(255,92,108,0.75)' : '#ff5c6c';
+                  else if (GREEN.has(c)) color = k > cur ? 'rgba(74,222,128,0.75)' : '#4ade80';
+                  return <span key={k} style={{color, transform: k === cur ? 'scale(1.08)' : 'none', display: 'inline-block'}}>{w}</span>;
+                })}
               </div>
             );
           };
@@ -427,27 +810,105 @@ jobs:
             );
           };
 
-          const SceneView = ({s, theme, style, fs, portrait}) => {
+          const Info = ({num, fs, accent, f, font}) => {
+            const {fps} = useVideoConfig();
+            const pop = spring({frame: f - 6, fps, config: {damping: 12}});
+            const prog = interpolate(f, [8, 50], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+            const e = 1 - Math.pow(1 - prog, 3);
+            const shown = num.year ? num.v : num.v * e;
+            let str = Number.isInteger(num.v) ? String(Math.round(shown)) : shown.toFixed(1);
+            if (num.pct) str += '%';
+            if (num.bn) str = toBn(str);
+            const trackW = fs * 8;
+            const fillW = Math.min(100, num.v) * e / 100 * trackW;
+            return (
+              <div style={{position: 'absolute', left: '6%', top: '24%', padding: `${fs * 0.35}px ${fs * 0.6}px`, borderRadius: 32, background: 'rgba(0,0,0,0.62)', border: `3px solid ${accent}`, transform: `scale(${pop})`, transformOrigin: 'left top', fontFamily: font}}>
+                <div style={{fontSize: fs * 1.9, fontWeight: 900, color: '#ffffff', lineHeight: 1.1}}>{str}</div>
+                {num.pct ? (
+                  <div style={{position: 'relative', width: trackW, height: fs * 0.3, borderRadius: 40, background: 'rgba(255,255,255,0.25)', marginTop: fs * 0.3}}>
+                    <div style={{width: fillW, height: '100%', borderRadius: 40, background: accent}} />
+                    <div style={{position: 'absolute', top: -fs * 0.1, left: fillW - fs * 0.25, width: fs * 0.5, height: fs * 0.5, borderRadius: '50%', background: '#fff', border: `4px solid ${accent}`}} />
+                  </div>
+                ) : null}
+              </div>
+            );
+          };
+
+          const Quiz = ({fs, f, dur, accent, font}) => {
+            const {fps} = useVideoConfig();
+            const pop = spring({frame: f - 6, fps, config: {damping: 10}});
+            const left = Math.max(0, 1 - f / Math.max(1, dur));
+            return (
+              <div style={{position: 'absolute', left: '6%', top: '24%', padding: `${fs * 0.35}px ${fs * 0.7}px`, borderRadius: 32, background: 'rgba(0,0,0,0.62)', border: `3px solid ${accent}`, transform: `scale(${pop})`, transformOrigin: 'left top', fontFamily: font}}>
+                <div style={{fontSize: fs * 1.1, fontWeight: 900, color: '#FFD93B'}}>❓ ভাবুন তো?</div>
+                <div style={{width: fs * 7, height: fs * 0.25, borderRadius: 40, background: 'rgba(255,255,255,0.25)', marginTop: fs * 0.25}}>
+                  <div style={{width: `${left * 100}%`, height: '100%', borderRadius: 40, background: accent}} />
+                </div>
+              </div>
+            );
+          };
+
+          const Stamp = ({red, fs, f, font}) => {
+            const {fps} = useVideoConfig();
+            const s = spring({frame: f - 16, fps, config: {damping: 8, mass: 0.6}});
+            const c = red ? '#ff3b4e' : '#22c55e';
+            const sc = interpolate(s, [0, 1], [2.4, 1]);
+            return (
+              <div style={{position: 'absolute', left: '50%', top: '42%', transform: `translate(-50%,-50%) rotate(-12deg) scale(${sc})`, opacity: Math.min(1, s * 2), padding: `${fs * 0.1}px ${fs * 0.5}px`, border: `${Math.max(6, fs * 0.12)}px solid ${c}`, borderRadius: 20, color: c, fontFamily: font, fontWeight: 900, fontSize: fs * 1.7, background: 'rgba(255,255,255,0.12)', letterSpacing: 4}}>
+                {red ? 'ভুল ✖' : 'সঠিক ✔'}
+              </div>
+            );
+          };
+
+          const Spot = ({f}) => {
+            const o = interpolate(f, [0, 10, 40, 60], [0, 0.85, 0.85, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+            const x = interpolate(f, [0, 40], [50, 82], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+            return <AbsoluteFill style={{background: `radial-gradient(circle at ${x}% 20%, rgba(0,0,0,0) 0%, rgba(0,0,0,0.6) 45%)`, opacity: o}} />;
+          };
+
+          const TR = {
+            fade: ['fade', 'slideUp', 'fade', 'zoom'],
+            slide: ['slide', 'slideUp', 'zoom', 'slide'],
+            zoom: ['zoom', 'slide', 'zoom', 'slideUp']
+          };
+
+          const SceneView = ({s, theme, style, title, fs, portrait}) => {
             const f = useCurrentFrame();
+            const font = fontOf(style.kind);
             const t = style.motion === 'fast' ? 6 : 10;
             const op = interpolate(f, [0, t], [0, 1], {extrapolateRight: 'clamp'});
+            const kind = (TR[style.transition] || TR.fade)[s.idx % 4];
             let tf = 'none';
-            if (style.transition === 'slide') tf = `translateX(${interpolate(f, [0, t], [6, 0], {extrapolateRight: 'clamp'})}%)`;
-            if (style.transition === 'zoom') tf = `scale(${interpolate(f, [0, t], [1.06, 1], {extrapolateRight: 'clamp'})})`;
+            if (kind === 'slide') tf = `translateX(${interpolate(f, [0, t], [6, 0], {extrapolateRight: 'clamp'})}%)`;
+            if (kind === 'slideUp') tf = `translateY(${interpolate(f, [0, t], [5, 0], {extrapolateRight: 'clamp'})}%)`;
+            if (kind === 'zoom') tf = `scale(${interpolate(f, [0, t], [1.06, 1], {extrapolateRight: 'clamp'})})`;
             const chip = interpolate(f, [0, 20], [0, 1], {extrapolateRight: 'clamp'});
+            const num = parseNum(s.text);
+            const quiz = !num && /[?？]/.test(s.text);
+            const cw = s.words.map(clean);
+            const stampRed = cw.some(w => STAMP_RED.has(w));
+            const stampGreen = !stampRed && cw.some(w => STAMP_GREEN.has(w));
+            const hasMedia = !!(s.clip || s.img);
+            const titleOp = s.idx === 0 && title ? interpolate(f, [0, 10, 60, 80], [0, 1, 1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}) : 0;
             return (
               <AbsoluteFill style={{opacity: op, transform: tf}}>
-                {s.img ? <Photo src={s.img} i={s.idx} dur={s.dur} motion={style.motion} /> : <MotionBG i={s.idx} theme={theme} />}
+                {s.clip ? <Clip src={s.clip} dur={s.dur} /> : s.img ? <Photo src={s.img} i={s.idx} dur={s.dur} motion={style.motion} /> : (style.kind === 'data' ? <MapBG i={s.idx} theme={theme} fs={fs} font={font} /> : <MotionBG i={s.idx} theme={theme} icon={s.icon} />)}
+                {s.chapter ? <Spot f={f} /> : null}
                 {s.chapter ? (
-                  <div style={{position: 'absolute', top: '5%', left: '6%', padding: '10px 28px', borderRadius: 40, background: theme.accent, color: '#fff', fontFamily: FONT, fontWeight: 700, fontSize: fs * 0.55, opacity: chip}}>{s.chapter}</div>
+                  <div style={{position: 'absolute', top: '5%', left: '6%', padding: '10px 28px', borderRadius: 40, background: theme.accent, color: '#fff', fontFamily: font, fontWeight: 700, fontSize: fs * 0.55, opacity: chip}}>{s.chapter}</div>
                 ) : null}
+                {titleOp > 0 ? (
+                  <div style={{position: 'absolute', top: '14%', left: '6%', right: '6%', textAlign: 'center', fontFamily: font, fontWeight: 900, fontSize: fs * 1.2, color: '#fff', textShadow: '0 4px 16px rgba(0,0,0,0.7)', opacity: titleOp}}>{title}</div>
+                ) : null}
+                {num ? <Info num={num} fs={fs} accent={theme.accent} f={f} font={font} /> : quiz ? <Quiz fs={fs} f={f} dur={s.dur} accent={theme.accent} font={font} /> : null}
+                {stampRed || stampGreen ? <Stamp red={stampRed} fs={fs} f={f} font={font} /> : null}
                 <Icon icon={s.icon} fs={fs} />
-                <Caption words={s.words} f={f} dur={s.dur} fs={fs} portrait={portrait} />
+                <Caption words={s.words} f={f} dur={s.dur} fs={fs} portrait={portrait} font={font} />
               </AbsoluteFill>
             );
           };
 
-          const Video = ({scenes, theme, style}) => {
+          const Video = ({scenes, theme, style, title}) => {
             const {width: w, height: h} = useVideoConfig();
             const fs = Math.round(Math.min(w, h) * 0.058);
             const portrait = h > w;
@@ -455,7 +916,7 @@ jobs:
               <AbsoluteFill style={{background: theme.bg}}>
                 {scenes.map(s => (
                   <Sequence key={s.idx} from={s.start} durationInFrames={s.dur}>
-                    <SceneView s={s} theme={theme} style={style} fs={fs} portrait={portrait} />
+                    <SceneView s={s} theme={theme} style={style} title={title} fs={fs} portrait={portrait} />
                   </Sequence>
                 ))}
                 <Audio src={staticFile('audio.mp3')} />
@@ -471,7 +932,7 @@ jobs:
               fps={30}
               width={1920}
               height={1080}
-              defaultProps={{scenes: [], theme: {bg: '#0b1f4d', accent: '#1e66ff'}, style: {motion: 'slow', transition: 'fade'}}}
+              defaultProps={{scenes: [], title: '', theme: {bg: '#0b1f4d', accent: '#1e66ff'}, style: {motion: 'slow', transition: 'fade', kind: 'general'}}}
               calculateMetadata={({props}) => ({durationInFrames: props.total || 300, fps: props.fps || 30, width: props.width || 1920, height: props.height || 1080})}
             />
           ));
@@ -486,6 +947,12 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
           CARTESIA_VOICE_ID: ${{ secrets.CARTESIA_VOICE_ID }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          MY_IMAGE_KEY: ${{ secrets.MY_IMAGE_KEY }}
           MODE: ${{ inputs.mode }}
           MINUTES: ${{ inputs.minutes }}
           SECONDS: ${{ inputs.seconds }}
