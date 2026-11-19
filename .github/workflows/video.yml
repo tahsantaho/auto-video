@@ -65,6 +65,28 @@ on:
           - off
           - upbeat
           - calm
+      visual:
+        description: 'ভিজ্যুয়াল মোড: code=কোড-গ্রাফিক্স (স্টক ফুটেজ নেই), stock=স্টক ফুটেজ'
+        required: true
+        default: 'code'
+        type: choice
+        options:
+          - code
+          - stock
+      icons:
+        description: 'কোড-মোড আইকন পছন্দ (কমা দিয়ে, ঐচ্ছিক) — যেমন: bolt,battery,chart'
+        required: false
+        default: ''
+      voice_preset:
+        description: 'ভয়েস স্টাইল'
+        required: true
+        default: 'podcast'
+        type: choice
+        options:
+          - podcast
+          - documentary
+          - news
+          - natural
       topic:
         description: 'টপিক (script খালি হলে লাগবে)'
         required: false
@@ -85,7 +107,7 @@ on:
     types: [run-video]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   pipeline:
@@ -191,6 +213,9 @@ jobs:
           IN_KIND: ${{ inputs.kind }}
           IN_THEME: ${{ inputs.theme }}
           IN_MUSIC: ${{ inputs.music }}
+          IN_VISUAL: ${{ inputs.visual }}
+          IN_ICONS: ${{ inputs.icons }}
+          TTS_PRESET: ${{ inputs.voice_preset }}
           IN_TOPIC: ${{ inputs.topic }}
           IN_PROJECT: ${{ inputs.project }}
           IN_BRIEF: ${{ inputs.brief }}
@@ -210,6 +235,41 @@ jobs:
             [ -e "$f" ] || continue
             node tools/drive_upload.mjs "$f" "$(basename "$f")" video/mp4 || true
           done
+
+      - name: Publish video directly to outputs branch (raw mp4 download)
+        if: always() && steps.gate.outputs.should_run == 'true' && hashFiles('out/video_*.mp4') != ''
+        run: |
+          set -e
+          git config user.name "auto-video-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code origin refs/heads/outputs >/dev/null 2>&1; then
+            git fetch origin outputs --depth 1
+            git checkout -B outputs origin/outputs
+          else
+            git checkout --orphan outputs
+            git rm -rf . 2>/dev/null || true
+          fi
+          STAMP=$(date -u +%Y%m%d-%H%M%S)
+          mkdir -p archive
+          for f in out/video_*.mp4; do [ -e "$f" ] || continue; cp "$f" "archive/${STAMP}-$(basename "$f")"; cp "$f" "latest.mp4"; done
+          [ -e latest.mp4 ] || { echo "কোনো ভিডিও নেই"; exit 0; }
+          for f in thumb.jpg:latest-thumb.jpg subs.srt:latest-subs.srt metadata.json:latest-metadata.json script.md:latest-script.md summary.json:latest-summary.json; do
+            s="${f%%:*}"; d="${f##*:}"
+            [ -e "out/$s" ] && cp "out/$s" "$d" || true
+          done
+          ls -1 archive/*.mp4 2>/dev/null | sort -r | tail -n +11 | xargs -r rm --
+          echo '## সরাসরি ডাউনলোড লিংক' > README.md
+          echo '' >> README.md
+          echo '- **সর্বশেষ ভিডিও:** https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest.mp4' >> README.md
+          echo '- **থাম্বনেইল:** https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest-thumb.jpg' >> README.md
+          echo '- **সাবটাইটেল (SRT):** https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest-subs.srt' >> README.md
+          echo '- **স্ক্রিপ্ট:** https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest-script.md' >> README.md
+          echo '' >> README.md
+          echo 'পুরোনো ভিডিও archive/ ফোল্ডারে (সর্বশেষ ১০টি রাখা হয়)।' >> README.md
+          git add -A
+          git commit -m "output: ${STAMP} (${GITHUB_RUN_ID})" || exit 0
+          git push origin outputs
+          echo "✅ সরাসরি লিংক: https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest.mp4"
 
       - name: Upload artifacts
         if: always() && steps.gate.outputs.should_run == 'true'

@@ -35,6 +35,8 @@ const CFG = {
   kind: cfgVal('IN_KIND', 'kind', 'B', s => s.toUpperCase().trim(), ['A', 'B', 'C']),
   theme: cfgVal('IN_THEME', 'theme', 'warm', s => s.toLowerCase().trim()),
   music: cfgVal('IN_MUSIC', 'music', 'auto', s => s.toLowerCase().trim(), ['auto', 'off', 'upbeat', 'calm']),
+  visual: cfgVal('IN_VISUAL', 'visual', 'code', s => s.toLowerCase().trim(), ['code', 'stock']),
+  iconPref: (S('IN_ICONS') || (WCFGD.icons || '')).split(/[\s,;]+/).map(s => s.trim().toLowerCase()).filter(Boolean),
   edgeVoice: S('EDGE_VOICE') || (WCFG.tts && WCFG.tts.edge_voice) || 'bn-BD-NabanitaNeural',
   voicePreset: (S('TTS_PRESET') || (WCFG.tts && WCFG.tts.preset) || 'podcast').trim(),
   voiceGap: (() => { const g = parseFloat(S('VOICE_GAP') ?? (WCFG.tts && WCFG.tts.gap)); return Number.isFinite(g) ? Math.max(0, Math.min(2, g)) : 0.25; })(),
@@ -167,10 +169,20 @@ const tryParseJson = (text) => {
 };
 
 // ---------- স্ক্রিপ্ট ----------
+const ICONS_OK = ['bolt', 'battery', 'clock', 'chart', 'money', 'fire', 'star', 'bulb', 'question', 'target', 'rocket', 'heart', 'globe', 'trend', 'phone', 'shield', 'leaf', 'bell', 'book', 'calendar', 'alert', 'drop', 'wifi', 'sun', 'cloud', 'lock', 'check', 'cross'];
+const CARD_TYPES = ['title', 'list', 'number', 'compare', 'quote', 'stat'];
+const FALLBACK_ICONS = ['bulb', 'bolt', 'target', 'chart', 'star', 'rocket', 'heart', 'shield', 'clock', 'trend'];
 function planPrompt(kind, theme) {
+  const cardRule = CFG.visual === 'code' ? `
+
+প্রতিটি দৃশ্যে আরও একটি "card" ফিল্ড দেবে (কোড-গ্রাফিক্স ভিজ্যুয়াল — ছবি/ভিডিও নয়, পর্দায় কোডে আঁকা প্রফেশনাল অ্যানিমেটেড কার্ড):
+"card":{"type":"title|list|number|compare|quote|stat — ঠিক একটি","icon":"নীচের তালিকা থেকে ঠিক একটি নাম","headline":"দৃশ্যের মূল কথা, সংক্ষিপ্ত বাংলা","points":["পয়েন্ট ১","পয়েন্ট ২","পয়েন্ট ৩"],"bad":["ভুল/খারাপ পয়েন্ট — শুধু compare টাইপে ২টি"],"value":"বড় সংখ্যা বাংলায় যেমন ৮৫% — শুধু number/stat","note":"ছোট সহায়ক লেখা (ঐচ্ছিক)"}
+আইকন-তালিকা (icon অবশ্যই এদের মধ্যে থেকে হবে): ${ICONS_OK.join(', ')}
+type বাছাই: শুরু/শিরোনাম দৃশ্য→title, তালিকা→list, চমক-সংখ্যা→number (পুরো ভিডিওতে ৩-এর বেশি নয়), ভালো-মন্দ তুলনা→compare (একবারই), উক্তি→quote, শতকরা/পরিসংখ্যান→stat। points-এ ২-৩টি ছোট পয়েন্ট, compare-এ points=ভালো পয়েন্ট, bad=মন্দ পয়েন্ট।`
+    : '';
   return `তুমি বাংলা ভিডিও পরিকল্পক। শুধু JSON দাও, এই কাঠামোয়:
 {"scenes":[{"text":"দৃশ্যের হুবহু ন্যারেশন অংশ","imageQuery":"ছবি খোঁজার জন্য সহজ ইংরেজি কীওয়ার্ড","effects":["উপযুক্ত হলে: icon:🤖 | counter:0,100,5 | stamp-red:টেক্সট | stamp-green:টেক্সট | bar:70 | slider | quiz:প্রশ্ন?|সঠিক|ভুল১|ভুল২ | spotlight | map | effect লাগবে না হলে খালি স্ট্রিং"]}],"title":"ইউটিউব টাইটেল (বাংলা, ৮০ অক্ষরের মধ্যে)","description":"ইউটিউব বর্ণনা, ২-৩ বাক্য","hashtags":["#বাংলা","#..."],"thumbText":"থাম্বনেইলে বড় করে লেখা ৩-৫ শব্দ","keywordsRed":["ক্যাপশনে লাল করার নেতিবাচক শব্দ"],"keywordsGreen":["সবুজ করার ইতিবাচক শব্দ"],"musicMood":"upbeat|calm"}
-নিয়ম: scenes[].text জোড়া দিলে হুবহু পূর্ণ স্ক্রিপ্ট হবে (কোনো শব্দ বাদ/যোগ/বদল নয়)। দৃশ্য ৮-১৪টি, প্রতিটি ১-২ বাক্য। ধরন: ${kind} (A=টিউটোরিয়াল, B=ফ্ল্যাট কার্টুন-ব্যাখ্যা+কুইজ, C=ম্যাপ/ডেটা+কাউন্টার)। theme: ${theme}. ইফেক্ট সব দৃশ্যে নয়, যেখানে অর্থবহ; কমপক্ষে ৩টি দৃশ্যে। imageQuery ইংরেজিতে সহজ, ধরনের স্টাইলে।`;
+নিয়ম: scenes[].text জোড়া দিলে হুবহু পূর্ণ স্ক্রিপ্ট হবে (কোনো শব্দ বাদ/যোগ/বদল নয়)। দৃশ্য ৮-১৪টি, প্রতিটি ১-২ বাক্য। ধরন: ${kind} (A=টিউটোরিয়াল, B=ফ্ল্যাট কার্টুন-ব্যাখ্যা+কুইজ, C=ম্যাপ/ডেটা+কাউন্টার)। theme: ${theme}. ইফেক্ট সব দৃশ্যে নয়, যেখানে অর্থবহ; কমপক্ষে ৩টি দৃশ্যে। imageQuery ইংরেজিতে সহজ, ধরনের স্টাইলে।${cardRule}`;
 }
 
 async function buildScript() {
@@ -281,7 +293,7 @@ async function voiceEdge(text, file) {
 function concatVoice(scenes, out) {
   const list = scenes.map(s => `file '${path.resolve(s.voiceFile).replace(/'/g, '')}'`).join('\n');
   W(`${OUT}/list.txt`, list);
-  run('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', `${OUT}/list.txt`, '-c:a', 'libmp3lame', '-q:a', '3', out], 'ffmpeg-voice-concat', 300000);
+  run('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', `${OUT}/list.txt`, '-c:a', 'libmp3lame', '-q:a', '2', out], 'ffmpeg-voice-concat', 300000);
 }
 
 const OUT = 'out';
@@ -385,7 +397,31 @@ async function pollinations(q, file, w, h) {
   return download(url, file);
 }
 
+function assignCard(s) {
+  const c = (s.card && typeof s.card === 'object') ? s.card : {};
+  const type = CARD_TYPES.includes(c.type) ? c.type : CARD_TYPES[(s.index + 1) % CARD_TYPES.length];
+  const icon = ICONS_OK.includes(c.icon) ? c.icon : FALLBACK_ICONS[s.index % FALLBACK_ICONS.length];
+  const words = s.text.split(/\s+/).filter(Boolean);
+  const chunk = (n) => { const per = Math.ceil(words.length / n); return Array.from({ length: n }, (_, k) => words.slice(k * per, (k + 1) * per).join(' ')).filter(Boolean); };
+  const points = (Array.isArray(c.points) && c.points.length) ? c.points.map(String) : (words.length > 6 ? chunk(3) : []);
+  const bad = (Array.isArray(c.bad) && c.bad.length) ? c.bad.map(String) : ['অগোছালো অভ্যাস', 'ওলটপালট ব্যবহার'];
+  s.card = {
+    type,
+    icon,
+    headline: String(c.headline || '').trim() || words.slice(0, 7).join(' ') || CFG.topic || '',
+    points: points.slice(0, type === 'compare' ? 2 : 4),
+    bad: type === 'compare' ? bad.slice(0, 2) : undefined,
+    value: String(c.value || (type === 'number' ? '৫২' : type === 'stat' ? '৮৫%' : '')),
+    note: String(c.note || '').trim(),
+  };
+}
+
 async function buildVisuals(scenes, rw, rh) {
+  if (CFG.visual === 'code') {
+    for (const s of scenes) { assignCard(s); s.asset = null; s.assetType = 'code'; }
+    log(`ভিজ্যুয়াল: কোড-গ্রাফিক্স মোড — ${scenes.length}টি দৃশ্য সম্পূর্ণ কোডে আঁকা হবে (স্টক ফুটেজ নেই)`);
+    return;
+  }
   const chain = providers.visual.filter(v =>
     v === 'pollinations' ? true : v.startsWith('pixabay') ? !!CFG.pixabayKey : !!CFG.pexelsKey);
   for (const s of scenes) {
@@ -410,7 +446,7 @@ function buildMusic(total, mood) {
   if (fs.existsSync('assets/music.mp3')) { log('গান: assets/music.mp3 ব্যবহার'); return { file: 'assets/music.mp3', volume: 0.14 }; }
   const mv = ['upbeat', 'calm'].includes(CFG.music) ? CFG.music : (mood === 'calm' ? 'calm' : 'upbeat');
   run('node', ['tools/synth_audio.mjs', 'music', mv, `${PUB}/music_raw.wav`, String(Math.min(240, Math.ceil(total) + 2))], 'synth-music', 120000);
-  run('ffmpeg', ['-y', '-i', `${PUB}/music_raw.wav`, '-c:a', 'libmp3lame', '-q:a', '5', `${PUB}/music.mp3`], 'music-mp3', 120000);
+  run('ffmpeg', ['-y', '-i', `${PUB}/music_raw.wav`, '-c:a', 'libmp3lame', '-q:a', '2', `${PUB}/music.mp3`], 'music-mp3', 120000);
   log(`গান: অটো-সিন্থ (${mv})`);
   return { file: 'music.mp3', volume: 0.12 };
 }
@@ -420,8 +456,8 @@ function buildSfx() {
   if (process.env.PIPE_DRY === '1') return;
   fs.mkdirSync(`${PUB}/sfx`, { recursive: true });
   if (fs.existsSync(`${PUB}/sfx/pop.wav`)) return;
-  for (const sfx of ['pop', 'ding', 'whoosh']) run('node', ['tools/synth_audio.mjs', 'sfx', sfx, `${PUB}/sfx/${sfx}.wav`], `sfx-${sfx}`, 60000);
-  log('এসএফএক্স: সিন্থ pop/ding/whoosh তৈরি');
+  for (const sfx of ['pop', 'ding', 'whoosh', 'click']) run('node', ['tools/synth_audio.mjs', 'sfx', sfx, `${PUB}/sfx/${sfx}.wav`], `sfx-${sfx}`, 60000);
+  log('এসএফএক্স: সিন্থ pop/ding/whoosh/click তৈরি');
 }
 
 // ---------- SRT ----------
@@ -480,6 +516,7 @@ const main = async () => {
     index: i, text: String(s?.text || '').trim(),
     imageQuery: String(s?.imageQuery || CFG.topic || 'abstract background').slice(0, 120),
     effects: (s?.effects || []).map(e => String(e)).filter(Boolean).slice(0, 3),
+    card: (s?.card && typeof s.card === 'object') ? s.card : null,
   })).filter(s => s.text.length);
   if (!rawScenes.length) rawScenes.push({ index: 0, text: plan.narration, imageQuery: CFG.topic, effects: [] });
   log(`দৃশ্য: ${rawScenes.length}টি`);
@@ -513,6 +550,7 @@ const main = async () => {
 
   const props = {
     fps: FPS, width: RW, height: RH, kind: plan.kind, theme: plan.theme,
+    visual: CFG.visual, iconPref: CFG.iconPref,
     narration: voice.file,
     music, scenes: rawScenes,
     thumb: { text: plan.thumbText || plan.title || 'ভিডিও', asset: (rawScenes.find(s => s.assetType === 'photo') || {}).asset || null, kind: plan.kind },
@@ -539,7 +577,7 @@ const main = async () => {
 
   W(`${OUT}/summary.json`, JSON.stringify({
     mode: CFG.mode, aspect: CFG.aspect, kind: plan.kind, theme: plan.theme,
-    voicePath: voice.path, geminiModel: modelUsed, totalSec: +voice.total.toFixed(1),
+    voicePath: voice.path, geminiModel: modelUsed, totalSec: +voice.total.toFixed(1), visual: CFG.visual,
     scenes: rawScenes.length, music: music ? music.file : 'off',
   }, null, 2));
   log(`সম্পন্ন — আউটপুট আর্টিফ্যাক্টে (${OUT}/)`);

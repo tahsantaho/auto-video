@@ -1,6 +1,6 @@
 {
   "enabled": true,
-  "run_id": "step2-topic-full",
+  "run_id": "step3-code-graphics",
   "mode": "draft",
   "minutes": 1.5,
   "aspect": "9:16",
@@ -11,5 +11,6 @@
   "topic": "মোবাইলের ব্যাটারি দ্রুত ফুরিয়ে যায় কেন — ৫টি কারণ ও সমাধান",
   "project": "",
   "brief": "সাধারণ মানুষের জন্য কথ্য বাংলায়, উদাহরণসহ।",
-  "script": ""
+  "script": "",
+  "visual": "code"
 }
