@@ -192,7 +192,7 @@ const ttsText = (t) => { let s = t; for (const [a, b] of Object.entries(pronounc
 async function voiceCartesia(text, file) {
   if (!CFG.cartesiaKey) throw new Error('CARTESIA_API_KEY নেই');
   if (!CFG.voiceId) throw new Error('CARTESIA_VOICE_ID নেই');
-  const body = { model_id: 'sonic-3', transcript: text, voice: CFG.voiceId, language: 'bn', output_format: { container: 'mp3', bitrate: 128000 } };
+  const body = { model_id: 'sonic-3', transcript: text, voice: CFG.voiceId, language: 'bn', output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 } };
   if (process.env.CARTESIA_EXTRA) Object.assign(body, tryParseJson('{' + process.env.CARTESIA_EXTRA + '}'));
   const r = await jfetch('https://api.cartesia.ai/tts/bytes', {
     method: 'POST',

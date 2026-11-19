@@ -1,6 +1,6 @@
 {
   "enabled": true,
-  "run_id": "r5-voice-mini",
+  "run_id": "r6-voice-mini",
   "mode": "voice_test",
   "minutes": 0.1,
   "aspect": "9:16",
