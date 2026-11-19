@@ -512,10 +512,26 @@ const main = async () => {
   if (CFG.mode === 'script_only') { log('মোড script_only — শেষ'); return; }
 
   buildSfx();
-  const rawScenes = (plan.scenes || []).map((s, i) => ({
+  const EFFECT_RE = /^(icon:|counter:|stamp-red:|stamp-green:|bar:|slider|quiz:|spotlight|map)/;
+  const normEffects = (v) => {
+    if (Array.isArray(v)) return v.map(e => String(e)).filter(Boolean);
+    if (typeof v === 'string' && v.trim()) {
+      const parts = v.split(/\s*\|\s*/).map(x => x.trim()).filter(Boolean);
+      const merged = [];
+      for (const p of parts) {
+        const prev = merged.length - 1;
+        if (prev >= 0 && /quiz:/i.test(merged[prev]) && !EFFECT_RE.test(p)) merged[prev] += '|' + p;
+        else merged.push(p);
+      }
+      const hit = merged.filter(x => EFFECT_RE.test(x));
+      return hit.length ? hit : merged;
+    }
+    return [];
+  };
+  const rawScenes = (Array.isArray(plan.scenes) ? plan.scenes : []).map((s, i) => ({
     index: i, text: String(s?.text || '').trim(),
     imageQuery: String(s?.imageQuery || CFG.topic || 'abstract background').slice(0, 120),
-    effects: (s?.effects || []).map(e => String(e)).filter(Boolean).slice(0, 3),
+    effects: normEffects(s?.effects).map(e => String(e)).filter(Boolean).slice(0, 3),
     card: (s?.card && typeof s.card === 'object') ? s.card : null,
   })).filter(s => s.text.length);
   if (!rawScenes.length) rawScenes.push({ index: 0, text: plan.narration, imageQuery: CFG.topic, effects: [] });
