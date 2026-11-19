@@ -56,11 +56,15 @@ const keyPools = {
   cartesia: keysOf('CARTESIA_API_KEYS', 'CARTESIA_API_KEY'),
   pixabay: keysOf('PIXABAY_API_KEYS', 'PIXABAY_API_KEY'),
   pexels: keysOf('PEXELS_API_KEYS', 'PEXELS_API_KEY'),
+  groq: keysOf('GROQ_API_KEYS', 'GROQ_API_KEY'),
+  openrouter: keysOf('OPENROUTER_API_KEYS', 'OPENROUTER_API_KEY'),
 };
 CFG.geminiKeys = keyPools.gemini;
 CFG.cartesiaKeys = keyPools.cartesia;
 CFG.pixabayKeys = keyPools.pixabay;
 CFG.pexelsKeys = keyPools.pexels;
+CFG.groqKeys = keyPools.groq;
+CFG.openrouterKeys = keyPools.openrouter;
 CFG.geminiKey = CFG.geminiKeys[0] || '';
 CFG.cartesiaKey = CFG.cartesiaKeys[0] || '';
 CFG.pixabayKey = CFG.pixabayKeys[0] || '';
@@ -95,7 +99,7 @@ const ASPECTS = { '9:16': [1080, 1920], '16:9': [1920, 1080], '1:1': [1080, 1080
 const FPS = 30;
 
 const keyOk = (pool) => Array.isArray(pool) && pool.length > 0;
-const keyLog = (pool, i, ok, msg = '') => log(`${ok ? '✔ কী চলেছে' : '✖ কী ব্যর্থ'} [${pool==='gemini'?'Gemini':pool==='pixabay'?'Pixabay':pool==='pexels'?'Pexels':'Cartesia'}] #${i + 1}/${keyPools[pool]?.length || 0}${msg ? ' — ' + msg : ''}`);
+const keyLog = (pool, i, ok, msg = '') => log(`${ok ? '✔ কী চলেছে' : '✖ কী ব্যর্থ'} [${pool==='gemini'?'Gemini':pool==='groq'?'Groq':pool==='openrouter'?'OpenRouter':pool==='pixabay'?'Pixabay':pool==='pexels'?'Pexels':'Cartesia'}] #${i + 1}/${keyPools[pool]?.length || 0}${msg ? ' — ' + msg : ''}`);
 
 const waitMs = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -152,6 +156,7 @@ async function gemini(prompt, { json = false, temp = 0.8 } = {}) {
         } catch (e) {
           last = e;
           keyLog('gemini', ki, false, String(e).slice(0, 150));
+          if (/current quota|plan and billing/i.test(String(e))) throw new Error('Gemini দৈনিক কোটা শেষ (429) — ফলব্যাক প্রোভাইডার ব্যবহার হবে');
           if (/HTTP 429/.test(String(e))) await waitMs(45000);
           else if (/HTTP 503|AbortError|aborted/i.test(String(e))) await waitMs(45000);
           if (/HTTP 4(29|03|00)/.test(String(e))) break;
@@ -161,6 +166,95 @@ async function gemini(prompt, { json = false, temp = 0.8 } = {}) {
     log(`Gemini: মডেল ${model} থেকে পরেরটায় ফলব্যাক`);
   }
   throw last || new Error('Gemini সব মডেল ব্যর্থ');
+}
+
+// ফলব্যাক টেক্সট-প্রোভাইডার: Groq (ফ্রি কী), OpenRouter (ফ্রি কী), Pollinations (কী ছাড়া)
+async function openaiChat(base, key, model, prompt, { json = false, temp = 0.8 } = {}) {
+  const body = { model, temperature: temp, messages: [{ role: 'user', content: prompt }] };
+  if (json) body.response_format = { type: 'json_object' };
+  const headers = { 'Content-Type': 'application/json' };
+  if (key) headers.Authorization = `Bearer ${key}`;
+  const r = await jfetch(base, { method: 'POST', headers, body: JSON.stringify(body) }, 90000);
+  const d = await r.json();
+  const text = (d.choices?.[0]?.message?.content || '').trim();
+  if (!text) throw new Error('খালি উত্তর');
+  return text;
+}
+
+async function groq(prompt, opts = {}) {
+  if (!keyOk(CFG.groqKeys)) throw new Error('GROQ_API_KEY(S) নেই');
+  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+  let last = null;
+  for (const model of models) {
+    for (const key of CFG.groqKeys) {
+      const ki = CFG.groqKeys.indexOf(key);
+      try {
+        const text = await openaiChat('https://api.groq.com/openai/v1/chat/completions', key, model, prompt, opts);
+        modelUsed = `groq:${model}`;
+        keyLog('groq', ki, true);
+        return text;
+      } catch (e) {
+        last = e;
+        keyLog('groq', ki, false, String(e).slice(0, 150));
+        if (/HTTP 429/.test(String(e))) await waitMs(20000);
+        if (/HTTP 4(29|03|00)/.test(String(e))) break;
+      }
+    }
+  }
+  throw last || new Error('Groq ব্যর্থ');
+}
+
+async function openrouter(prompt, opts = {}) {
+  if (!keyOk(CFG.openrouterKeys)) throw new Error('OPENROUTER_API_KEY(S) নেই');
+  const models = ['meta-llama/llama-3.3-70b-instruct:free', 'google/gemini-2.0-flash-exp:free'];
+  let last = null;
+  for (const model of models) {
+    for (const key of CFG.openrouterKeys) {
+      const ki = CFG.openrouterKeys.indexOf(key);
+      try {
+        const text = await openaiChat('https://openrouter.ai/api/v1/chat/completions', key, model, prompt, opts);
+        modelUsed = `openrouter:${model}`;
+        keyLog('openrouter', ki, true);
+        return text;
+      } catch (e) {
+        last = e;
+        keyLog('openrouter', ki, false, String(e).slice(0, 150));
+        if (/HTTP 429/.test(String(e))) await waitMs(20000);
+        if (/HTTP 4(29|03|00)/.test(String(e))) break;
+      }
+    }
+  }
+  throw last || new Error('OpenRouter ব্যর্থ');
+}
+
+async function pollinationsText(prompt, opts = {}) {
+  const body = { model: 'openai', temperature: opts.temp ?? 0.8, messages: [{ role: 'user', content: prompt }] };
+  const r = await jfetch('https://text.pollinations.ai/openai', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }, 90000);
+  let text = (await r.text()).trim();
+  try { const d = JSON.parse(text); text = (d.choices?.[0]?.message?.content || '').trim() || text; } catch {}
+  if (!text) throw new Error('পোলিনেশনস খালি উত্তর');
+  modelUsed = 'pollinations:openai';
+  return text;
+}
+
+async function llm(prompt, opts = {}) {
+  const chain = [
+    ['Gemini', gemini],
+    ['Groq', groq],
+    ['OpenRouter', openrouter],
+    ['Pollinations', pollinationsText],
+  ];
+  let last = null;
+  for (const [name, fn] of chain) {
+    try { return await fn(prompt, opts); }
+    catch (e) {
+      last = e;
+      log(`${name} ব্যর্থ — পরের প্রোভাইডারে ফলব্যাক (${String(e).slice(0, 120)})`);
+    }
+  }
+  throw last || new Error('সব স্ক্রিপ্ট-প্রোভাইডার ব্যর্থ');
 }
 
 const tryParseJson = (text) => {
@@ -205,18 +299,18 @@ async function buildScript() {
   if (CFG.script) {
     const narration = CFG.script.replace(/\r/g, '').trim();
     log(`স্ক্রিপ্ট: ব্যবহারকারীর লেখা হুবহু (${narration.length} অক্ষর), শব্দ পরিবর্তন নেই`);
-    const planP = await gemini(`${planPrompt(kind, theme)}\n\nনিচের স্ক্রিপ্টের প্রতিটি শব্দ অপরিবর্তিত রাখতে হবে। শুধু দৃশ্যে ভাগ করো, ছবি/ইফেক্ট/মেটাডেটা বানাও।\n\nস্ক্রিপ্ট:\n${narration}`, { json: true, temp: 0.4 });
+    const planP = await llm(`${planPrompt(kind, theme)}\n\nনিচের স্ক্রিপ্টের প্রতিটি শব্দ অপরিবর্তিত রাখতে হবে। শুধু দৃশ্যে ভাগ করো, ছবি/ইফেক্ট/মেটাডেটা বানাও।\n\nস্ক্রিপ্ট:\n${narration}`, { json: true, temp: 0.4 });
     return { narration, ...tryParseJson(planP), theme, kind, metaOnly: true };
   }
 
   log(`স্ক্রিপ্ট: টপিক থেকে লেখা হচ্ছে (Gemini, কথ্য বাংলা, ${kind})`);
-  let narration = await gemini(
+  let narration = await llm(
     `${projectTxt}\n\nটপিক: ${CFG.topic || 'রোজকার জীবনে কাজে লাগে এমন একটি চমকপ্রদ তথ্য'}\nটার্গেট: আনুমানিক ${targetWords} শব্দ, একটানা প্যারাগ্রাফ।\nউচ্চারণ-তালিকা (ইংরেজি শব্দ ঠিক এভাবে বাংলা হরফে লিখবে): ${prons || 'নেই'}\nধরন ${kind}: ${kind === 'A' ? 'সহজ টিউটোরিয়াল, ধাপে ধাপে, উদাহরণসহ' : kind === 'C' ? 'তথ্য/ম্যাপ/সংখ্যাভিত্তিক, আকর্ষণীয় তথ্য-উপস্থাপনা' : 'গল্পের ছলে ব্যাখ্যা, কুইজ/চ্যালেঞ্জ আবহ'}।\n${CFG.brief ? 'অতিরিক্ত নির্দেশ: ' + CFG.brief + '\n' : ''}শুধু স্ক্রিপ্ট লেখো — শিরোনাম, মার্কডাউন, কমেন্ট, দৃশ্য-নাম্বার কিছুই নয়। মুখে বলার মতো স্বাভাবিক, আবেগ আছে, এআই-সুলভ খাঁটি-বাক্য নয়।`);
   for (let i = 1; i <= 3; i++) {
-    const rev = await gemini(`তুমি কড়া সম্পাদক। নিচের বাংলা ভয়েসওভার স্ক্রিপ্টে বানান, ব্যাকরণ, ভাঙা বাক্য ও এআই-সুলভ ভাষা ঠিক করো। মানে ও দৈর্ঘ্য কাছাকাছি রাখবে, কথ্য স্বাভাবিক রাখবে। শুধু চূড়ান্ত স্ক্রিপ্ট লিখবে।\n\nরিভিউ ${i}/3\n\n${narration}`, { temp: 0.5 });
+    const rev = await llm(`তুমি কড়া সম্পাদক। নিচের বাংলা ভয়েসওভার স্ক্রিপ্টে বানান, ব্যাকরণ, ভাঙা বাক্য ও এআই-সুলভ ভাষা ঠিক করো। মানে ও দৈর্ঘ্য কাছাকাছি রাখবে, কথ্য স্বাভাবিক রাখবে। শুধু চূড়ান্ত স্ক্রিপ্ট লিখবে।\n\nরিভিউ ${i}/3\n\n${narration}`, { temp: 0.5 });
     if (rev && rev.length >= narration.length * 0.6) { narration = rev; log(`স্ক্রিপ্ট রিভিউ ${i}/3 প্রয়োগ`); }
   }
-  const planP = await gemini(`${planPrompt(kind, theme)}\n\nস্ক্রিপ্ট (শব্দ বদল নয়, শুধু ভাগ):\n${narration}`, { json: true, temp: 0.4 });
+  const planP = await llm(`${planPrompt(kind, theme)}\n\nস্ক্রিপ্ট (শব্দ বদল নয়, শুধু ভাগ):\n${narration}`, { json: true, temp: 0.4 });
   return { narration, ...tryParseJson(planP), theme, kind };
 }
 
