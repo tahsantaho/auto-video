@@ -1,0 +1,284 @@
+name: Video Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '30 13 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'মোড'
+        required: true
+        default: 'draft'
+        type: choice
+        options:
+          - script_only
+          - voice_test
+          - draft
+          - full
+      minutes:
+        description: 'দৈর্ঘ্য (মিনিট), যেমন 1.5 = দেড় মিনিট'
+        required: true
+        default: '1.5'
+      aspect:
+        description: 'সাইজ'
+        required: true
+        default: '9:16'
+        type: choice
+        options:
+          - '9:16'
+          - '16:9'
+          - '1:1'
+          - '4:5'
+      resolution:
+        description: 'রেজোলিউশন (খালি = ডিফল্ট)'
+        required: false
+        default: ''
+        type: choice
+        options:
+          - ''
+          - '480p'
+          - '720p'
+          - '1080p'
+      kind:
+        description: 'ভিডিওর ধরন (A=টিউটোরিয়াল, B=কার্টুন ব্যাখ্যা, C=ম্যাপ ও ডেটা)'
+        required: true
+        default: 'B'
+        type: choice
+        options:
+          - A
+          - B
+          - C
+      theme:
+        description: 'রঙ/পরিবেশ (warm, cool, dark, nature, bright)'
+        required: true
+        default: 'warm'
+      music:
+        description: 'গান'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - off
+          - upbeat
+          - calm
+      visual:
+        description: 'ভিজ্যুয়াল মোড: code=কোড-গ্রাফিক্স (স্টক ফুটেজ নেই), stock=স্টক ফুটেজ'
+        required: true
+        default: 'code'
+        type: choice
+        options:
+          - code
+          - stock
+      icons:
+        description: 'কোড-মোড আইকন পছন্দ (কমা দিয়ে, ঐচ্ছিক) — যেমন: bolt,battery,chart'
+        required: false
+        default: ''
+      voice_preset:
+        description: 'ভয়েস স্টাইল'
+        required: true
+        default: 'podcast'
+        type: choice
+        options:
+          - podcast
+          - documentary
+          - news
+          - natural
+      topic:
+        description: 'টপিক (script খালি হলে লাগবে)'
+        required: false
+        default: ''
+      project:
+        description: 'প্রিসেট (projects.json-এর নাম, ঐচ্ছিক)'
+        required: false
+        default: ''
+      brief:
+        description: 'অতিরিক্ত বিস্তারিত (ঐচ্ছিক)'
+        required: false
+        default: ''
+      script:
+        description: 'পুরো স্ক্রিপ্ট (দিলে একটি শব্দও বদলাবে না)'
+        required: false
+        default: ''
+  repository_dispatch:
+    types: [run-video]
+
+permissions:
+  contents: write
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Gate - new run requested?
+        id: gate
+        env:
+          PIPE_PASSPHRASE: ${{ secrets.PIPE_PASSPHRASE }}
+        run: |
+          EVENT="${{ github.event_name }}"
+          SHOULD="false"
+          if [ "$EVENT" = "repository_dispatch" ] && [ -n "$PIPE_PASSPHRASE" ]; then
+            GOT="${{ github.event.client_payload.passphrase }}"
+            if [ "$GOT" != "$PIPE_PASSPHRASE" ]; then
+              echo "::warning::Apps Script পাসফ্রেজ মেলেনি — রান বাতিল"
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          if [ "$EVENT" != "push" ]; then
+            SHOULD="true"
+          elif [ -f data/run.spec.json ]; then
+            SPEC_ID=$(jq -r '.run_id // ""' data/run.spec.json)
+            ENABLED=$(jq -r '.enabled // false' data/run.spec.json)
+            LAST_ID=$(jq -r '.run_id // ""' data/last_run.json 2>/dev/null || echo '')
+            if [ "$ENABLED" = "true" ] && [ -n "$SPEC_ID" ] && [ "$SPEC_ID" != "$LAST_ID" ]; then
+              SHOULD="true"
+            fi
+          fi
+          echo "should_run=$SHOULD" >> "$GITHUB_OUTPUT"
+          echo "gate: event=$EVENT should_run=$SHOULD (spec_id=$SPEC_ID last_id=$LAST_ID)"
+
+      - name: Install dependencies
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version | head -1
+          sudo apt-get install -y -qq fonts-noto-core || echo "ফন্ট প্যাকেজ পাওয়া যায়নি — Google Fonts ব্যবহার হবে"
+          fc-list | grep -i -m2 bengali || echo "সিস্টেম ফন্ট নেই — রেন্ডারে Google Fonts CDN থেকে ফন্ট আসবে"
+          npm install --no-audit --no-fund
+
+      - name: Combine multi-key secrets
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+          GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
+          PIXABAY_API_KEYS: ${{ secrets.PIXABAY_API_KEYS }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          PIXABAY_API_KEY_2: ${{ secrets.PIXABAY_API_KEY_2 }}
+          PIXABAY_API_KEY_3: ${{ secrets.PIXABAY_API_KEY_3 }}
+          PIXABAY_API_KEY_4: ${{ secrets.PIXABAY_API_KEY_4 }}
+          PIXABAY_API_KEY_5: ${{ secrets.PIXABAY_API_KEY_5 }}
+          CARTESIA_API_KEYS: ${{ secrets.CARTESIA_API_KEYS }}
+          CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
+          PEXELS_API_KEYS: ${{ secrets.PEXELS_API_KEYS }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          append() {
+            local name="$1" all="$2"; shift 2
+            for extra in "$@"; do
+              if [ -n "$extra" ]; then all="$all${all:+,}$extra"; fi
+            done
+            if [ -n "$(echo "$all" | tr -d '[:space:],')" ]; then
+              echo "$name=$all" >> "$GITHUB_ENV"
+            fi
+          }
+          # একাধিক কী: কমা-সিক্রেট বা নম্বর-সিক্রেট (KEY_2..KEY_5) — যাই দেওয়া থাকুক, একসাথে জুড়ে নেয়
+          append GEMINI_API_KEYS "$GEMINI_API_KEYS" "$GEMINI_API_KEY_2" "$GEMINI_API_KEY_3" "$GEMINI_API_KEY_4" "$GEMINI_API_KEY_5"
+          append PIXABAY_API_KEYS "$PIXABAY_API_KEYS" "$PIXABAY_API_KEY_2" "$PIXABAY_API_KEY_3" "$PIXABAY_API_KEY_4" "$PIXABAY_API_KEY_5"
+
+      - name: Run pipeline
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          GEMINI_API_KEYS: ${{ env.GEMINI_API_KEYS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CARTESIA_API_KEYS: ${{ secrets.CARTESIA_API_KEYS }}
+          CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
+          CARTESIA_VOICE_ID: ${{ secrets.CARTESIA_VOICE_ID }}
+          CARTESIA_VOICE_IDS: ${{ secrets.CARTESIA_VOICE_IDS }}
+          CARTESIA_EXTRA: ${{ secrets.CARTESIA_EXTRA }}
+          PIXABAY_API_KEYS: ${{ env.PIXABAY_API_KEYS }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          PEXELS_API_KEYS: ${{ secrets.PEXELS_API_KEYS }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          EDGE_VOICE: ${{ secrets.EDGE_VOICE }}
+          GEMINI_MODEL_CHAIN: ${{ secrets.GEMINI_MODEL_CHAIN }}
+          IN_MODE: ${{ inputs.mode }}
+          IN_MINUTES: ${{ inputs.minutes }}
+          IN_ASPECT: ${{ inputs.aspect }}
+          IN_RESOLUTION: ${{ inputs.resolution }}
+          IN_KIND: ${{ inputs.kind }}
+          IN_THEME: ${{ inputs.theme }}
+          IN_MUSIC: ${{ inputs.music }}
+          IN_VISUAL: ${{ inputs.visual }}
+          IN_ICONS: ${{ inputs.icons }}
+          TTS_PRESET: ${{ inputs.voice_preset }}
+          IN_TOPIC: ${{ inputs.topic }}
+          IN_PROJECT: ${{ inputs.project }}
+          IN_BRIEF: ${{ inputs.brief }}
+          IN_SCRIPT: ${{ inputs.script }}
+        run: node pipeline.mjs
+
+      - name: Optional - upload to Google Drive (checkpoint)
+        if: always() && steps.gate.outputs.should_run == 'true' && hashFiles('out/*.mp4') != ''
+        continue-on-error: true
+        env:
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+        run: |
+          for f in out/*.mp4; do
+            [ -e "$f" ] || continue
+            node tools/drive_upload.mjs "$f" "$(basename "$f")" video/mp4 || true
+          done
+
+      - name: Publish video directly to outputs branch (raw mp4 download)
+        if: always() && steps.gate.outputs.should_run == 'true' && hashFiles('out/video_*.mp4') != ''
+        run: |
+          set -e
+          git config user.name "auto-video-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code origin refs/heads/outputs >/dev/null 2>&1; then
+            git fetch origin outputs --depth 1
+            git checkout -B outputs origin/outputs
+          else
+            git checkout --orphan outputs
+            git rm -rf . 2>/dev/null || true
+          fi
+          STAMP=$(date -u +%Y%m%d-%H%M%S)
+          mkdir -p archive
+          for f in out/video_*.mp4; do [ -e "$f" ] || continue; cp "$f" "archive/${STAMP}-$(basename "$f")"; cp "$f" "latest.mp4"; done
+          [ -e latest.mp4 ] || { echo "কোনো ভিডিও নেই"; exit 0; }
+          for f in thumb.jpg:latest-thumb.jpg subs.srt:latest-subs.srt metadata.json:latest-metadata.json script.md:latest-script.md summary.json:latest-summary.json; do
+            s="${f%%:*}"; d="${f##*:}"
+            [ -e "out/$s" ] && cp "out/$s" "$d" || true
+          done
+          ls -1 archive/*.mp4 2>/dev/null | sort -r | tail -n +11 | xargs -r rm --
+          echo '## সরাসরি ডাউনলোড লিংক' > README.md
+          echo '' >> README.md
+          echo '- **সর্বশেষ ভিডিও:** https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest.mp4' >> README.md
+          echo '- **থাম্বনেইল:** https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest-thumb.jpg' >> README.md
+          echo '- **সাবটাইটেল (SRT):** https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest-subs.srt' >> README.md
+          echo '- **স্ক্রিপ্ট:** https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest-script.md' >> README.md
+          echo '' >> README.md
+          echo 'পুরোনো ভিডিও archive/ ফোল্ডারে (সর্বশেষ ১০টি রাখা হয়)।' >> README.md
+          git add -A
+          git commit -m "output: ${STAMP} (${GITHUB_RUN_ID})" || exit 0
+          git push origin outputs
+          echo "✅ সরাসরি লিংক: https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest.mp4"
+
+      - name: Upload artifacts
+        if: always() && steps.gate.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-output
+          path: |
+            out/
+            data/log.txt
+            data/last_run.json
+          if-no-files-found: warn
+          retention-days: 7
