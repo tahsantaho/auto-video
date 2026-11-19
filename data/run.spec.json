@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "run_id": "r1-script",
+  "mode": "script_only",
+  "minutes": 0.25,
+  "aspect": "9:16",
+  "kind": "B",
+  "theme": "warm",
+  "music": "auto",
+  "topic": "মোবাইল দিয়ে সময় বাঁচানোর ৩টি সহজ অভ্যাস",
+  "project": "",
+  "brief": "",
+  "script": ""
+}

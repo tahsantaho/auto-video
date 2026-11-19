@@ -4,17 +4,34 @@ import { spawnSync } from 'node:child_process';
 
 const S = (k, d = '') => (process.env[k] ?? d).toString().trim();
 
+const SPEC = (() => { try { return JSON.parse(fs.readFileSync('data/run.spec.json', 'utf8')) || {}; } catch { return {}; } })();
+const cfgVal = (envKey, specKey, fallback, norm, valid) => {
+  const raw = S(envKey);
+  let v = raw !== '' ? raw : (SPEC[specKey] ?? '');
+  if (norm) v = norm(String(v));
+  if (v === '' || v === undefined || v === null) v = fallback;
+  if (valid && !valid.includes(v)) v = fallback;
+  return v;
+};
+const cfgNum = (envKey, specKey, fallback) => {
+  let v = parseFloat(S(envKey) !== '' ? S(envKey) : (SPEC[specKey] ?? ''));
+  if (!Number.isFinite(v)) v = parseFloat(SPEC[specKey]);
+  if (!Number.isFinite(v)) v = fallback;
+  return Math.max(0.25, Math.min(10, v));
+};
+
 const CFG = {
-  mode: S('IN_MODE', 'draft').toLowerCase(),
-  minutes: Math.max(0.25, Math.min(10, parseFloat(S('IN_MINUTES', '1.5')) || 1.5)),
-  aspect: ['9:16', '16:9', '1:1', '4:5'].includes(S('IN_ASPECT')) ? S('IN_ASPECT') : '9:16',
-  kind: ['A', 'B', 'C'].includes(S('IN_KIND').toUpperCase()) ? S('IN_KIND').toUpperCase() : 'B',
-  theme: S('IN_THEME', 'warm').toLowerCase(),
-  music: S('IN_MUSIC', 'auto').toLowerCase(),
-  topic: S('IN_TOPIC', ''),
-  project: S('IN_PROJECT', ''),
-  brief: S('IN_BRIEF', ''),
-  script: S('IN_SCRIPT', ''),
+  mode: cfgVal('IN_MODE', 'mode', 'draft', s => s.toLowerCase().trim(), ['script_only', 'voice_test', 'draft', 'full']),
+  minutes: cfgNum('IN_MINUTES', 'minutes', 1.5),
+  aspect: cfgVal('IN_ASPECT', 'aspect', '9:16', s => s.trim(), ['9:16', '16:9', '1:1', '4:5']),
+  kind: cfgVal('IN_KIND', 'kind', 'B', s => s.toUpperCase().trim(), ['A', 'B', 'C']),
+  theme: cfgVal('IN_THEME', 'theme', 'warm', s => s.toLowerCase().trim()),
+  music: cfgVal('IN_MUSIC', 'music', 'auto', s => s.toLowerCase().trim(), ['auto', 'off', 'upbeat', 'calm']),
+  topic: cfgVal('IN_TOPIC', 'topic', ''),
+  project: cfgVal('IN_PROJECT', 'project', ''),
+  brief: cfgVal('IN_BRIEF', 'brief', ''),
+  script: cfgVal('IN_SCRIPT', 'script', ''),
+  runId: String(SPEC.run_id || 'manual'),
   geminiKey: S('GEMINI_API_KEY'),
   cartesiaKey: S('CARTESIA_API_KEY'),
   voiceId: S('CARTESIA_VOICE_ID'),
@@ -347,7 +364,8 @@ function buildCues(scenes, keyRed, keyGreen) {
 
 // ---------- মূল ----------
 const main = async () => {
-  log(`শুরু: mode=${CFG.mode}, minutes=${CFG.minutes}, aspect=${CFG.aspect}, kind=${CFG.kind}, theme=${CFG.theme}, music=${CFG.music}, project=${CFG.project || '-'}`);
+  W('data/last_run.json', JSON.stringify({ run_id: CFG.runId, mode: CFG.mode, started_at: new Date().toISOString() }, null, 2));
+  log(`শুরু: run_id=${CFG.runId}, mode=${CFG.mode}, minutes=${CFG.minutes}, aspect=${CFG.aspect}, kind=${CFG.kind}, theme=${CFG.theme}, music=${CFG.music}, project=${CFG.project || '-'}`);
   fs.mkdirSync(OUT, { recursive: true });
 
   const plan = await retry(3, buildScript, 'স্ক্রিপ্ট-ধাপ');

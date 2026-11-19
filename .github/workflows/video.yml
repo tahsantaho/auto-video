@@ -1,6 +1,9 @@
 name: Video Pipeline
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     - cron: '30 13 * * *'
   workflow_dispatch:
@@ -83,10 +86,30 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Gate - new run requested?
+        id: gate
+        run: |
+          EVENT="${{ github.event_name }}"
+          SHOULD="false"
+          if [ "$EVENT" != "push" ]; then
+            SHOULD="true"
+          elif [ -f data/run.spec.json ]; then
+            SPEC_ID=$(jq -r '.run_id // ""' data/run.spec.json)
+            ENABLED=$(jq -r '.enabled // false' data/run.spec.json)
+            LAST_ID=$(jq -r '.run_id // ""' data/last_run.json 2>/dev/null || echo '')
+            if [ "$ENABLED" = "true" ] && [ -n "$SPEC_ID" ] && [ "$SPEC_ID" != "$LAST_ID" ]; then
+              SHOULD="true"
+            fi
+          fi
+          echo "should_run=$SHOULD" >> "$GITHUB_OUTPUT"
+          echo "gate: event=$EVENT should_run=$SHOULD (spec_id=$SPEC_ID last_id=$LAST_ID)"
+
       - name: Install dependencies
+        if: steps.gate.outputs.should_run == 'true'
         run: npm install --no-audit --no-fund
 
       - name: Run pipeline
+        if: steps.gate.outputs.should_run == 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
@@ -106,12 +129,13 @@ jobs:
         run: node pipeline.mjs
 
       - name: Upload artifacts
-        if: always()
+        if: always() && steps.gate.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: video-output
           path: |
             out/
             data/log.txt
+            data/last_run.json
           if-no-files-found: warn
           retention-days: 7
