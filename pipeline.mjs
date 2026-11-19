@@ -138,6 +138,16 @@ async function buildScript() {
   const kind = preset.kind || CFG.kind;
   const prons = Object.entries(pronounce).map(([a, b]) => `${a} → ${b}`).join('; ');
 
+  if (CFG.script && CFG.mode === 'voice_test') {
+    const narration = CFG.script.replace(/\r/g, '').trim();
+    const parts = narration.split(/(?<=[।!?])\s+/).filter(s => s.trim().length);
+    let texts;
+    if (parts.length < 2) texts = [narration];
+    else { const h = Math.ceil(parts.length / 2); texts = [parts.slice(0, h).join(' '), parts.slice(h).join(' ')]; }
+    log(`ভয়েস-টেস্ট: Gemini-বিহীন, ${texts.length}টি ভাগ, ${narration.length} অক্ষর`);
+    return { narration, scenes: texts.map(t => ({ text: t })), title: 'ভয়েস টেস্ট', description: '', hashtags: [], thumbText: 'ভয়েস টেস্ট', keywordsRed: [], keywordsGreen: [], musicMood: 'calm', theme, kind };
+  }
+
   if (CFG.script) {
     const narration = CFG.script.replace(/\r/g, '').trim();
     log(`স্ক্রিপ্ট: ব্যবহারকারীর লেখা হুবহু (${narration.length} অক্ষর), শব্দ পরিবর্তন নেই`);

@@ -1,14 +1,14 @@
 {
   "enabled": true,
-  "run_id": "r4-voice",
+  "run_id": "r5-voice-mini",
   "mode": "voice_test",
-  "minutes": 0.25,
+  "minutes": 0.1,
   "aspect": "9:16",
   "kind": "B",
   "theme": "warm",
   "music": "auto",
-  "topic": "মোবাইল দিয়ে সময় বাঁচানোর ৩টি সহজ অভ্যাস",
+  "topic": "",
   "project": "",
   "brief": "",
-  "script": ""
+  "script": "কথা বাড়ছে ভোটের প্রস্তুতি ধানের আসরে। বিপরীত শিবিরের সমর্থন তিনি স্পষ্ট করে জানালেন না।"
 }
