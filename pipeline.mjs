@@ -86,7 +86,7 @@ async function jfetch(url, opt = {}, ms = 120000) {
 function run(cmd, args, tag, ms = 600000) {
   if (process.env.PIPE_DRY === '1') return { stdout: '' };
   const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: ms, maxBuffer: 64 * 1024 * 1024 });
-  if (r.status !== 0) throw new Error(`${tag} ব্যর্থ: ${(r.stderr || r.stdout || '').slice(-500)}`);
+  if (r.status !== 0) throw new Error(`${tag} ব্যর্থ (exit=${r.status}, signal=${r.signal}, err=${r.error?.message || '-'}): ${(r.stderr || r.stdout || '(আউটপুট খালি)').slice(-500)}`);
   return r;
 }
 
@@ -158,8 +158,11 @@ async function buildScript() {
 
 // ---------- ভয়েস ----------
 const probeSec = (file) => {
+  const head = Buffer.from(fs.readFileSync(file).slice(0, 16)).toString('utf8').replace(/[^\x20-\x7e]/g, '.');
   const r = run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file], 'ffprobe', 60000);
-  return parseFloat(r.stdout.trim()) || 0;
+  const d = parseFloat(r.stdout.trim());
+  if (!Number.isFinite(d) || d <= 0) throw new Error(`ffprobe সময় পড়তে পারেনি (${file}, সাইজ=${fs.statSync(file).size}, শুরুটা='${head}')`);
+  return d;
 };
 
 function silences(file) {
@@ -179,7 +182,7 @@ const ttsText = (t) => { let s = t; for (const [a, b] of Object.entries(pronounc
 async function voiceCartesia(text, file) {
   if (!CFG.cartesiaKey) throw new Error('CARTESIA_API_KEY নেই');
   if (!CFG.voiceId) throw new Error('CARTESIA_VOICE_ID নেই');
-  const body = { model_id: 'sonic-3', transcript: text, voice_id: CFG.voiceId, language: 'bn', output_format: { container: 'mp3', bitrate: 128000 } };
+  const body = { model_id: 'sonic-3', transcript: text, voice: CFG.voiceId, language: 'bn', output_format: { container: 'mp3', bitrate: 128000 } };
   if (process.env.CARTESIA_EXTRA) Object.assign(body, tryParseJson('{' + process.env.CARTESIA_EXTRA + '}'));
   const r = await jfetch('https://api.cartesia.ai/tts/bytes', {
     method: 'POST',
