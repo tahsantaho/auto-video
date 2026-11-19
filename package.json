@@ -1,0 +1,13 @@
+{
+  "name": "auto-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "pipeline": "node pipeline.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "@remotion/cli": "^4.0.240",
+    "remotion": "^4.0.240"
+  }
+}

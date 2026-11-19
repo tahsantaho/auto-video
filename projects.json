@@ -1,0 +1,8 @@
+{
+  "default": {},
+  "tech_tips": { "kind": "A", "theme": "cool", "music": "upbeat" },
+  "story": { "kind": "B", "theme": "warm", "music": "calm" },
+  "quiz": { "kind": "B", "theme": "bright", "music": "upbeat" },
+  "geodata": { "kind": "C", "theme": "dark", "music": "auto" },
+  "calm_info": { "kind": "C", "theme": "nature", "music": "calm" }
+}

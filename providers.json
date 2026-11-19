@@ -1,0 +1,7 @@
+{
+  "script_models": ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"],
+  "voice": ["cartesia_sonic3", "edge_tts"],
+  "visual": ["pixabay_video", "pixabay_photo", "pollinations"],
+  "music": ["user_file", "synth"],
+  "note": "প্রতিটি কাজে উপর থেকে চেষ্টা হয়; একটি ব্যর্থ হলে পরেরটা। চাবি না থাকলে সেই পথ লাফিয়ে যায়।"
+}

@@ -1,22 +1,26 @@
-name: Ultimate Autonomous Video Pipeline
+name: Video Pipeline
 
 on:
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '30 13 * * *'
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Select Execution Mode'
+        description: 'মোড'
         required: true
-        default: 'Full'
+        default: 'draft'
         type: choice
         options:
-          - Full
-          - Draft
-          - Voice_test
-          - Script_only
+          - script_only
+          - voice_test
+          - draft
+          - full
+      minutes:
+        description: 'দৈর্ঘ্য (মিনিট), যেমন 1.5 = দেড় মিনিট'
+        required: true
+        default: '1.5'
       aspect:
-        description: 'Video Aspect Ratio'
+        description: 'সাইজ'
         required: true
         default: '9:16'
         type: choice
@@ -24,89 +28,90 @@ on:
           - '9:16'
           - '16:9'
           - '1:1'
-      topic:
-        description: 'Enter Video Topic or Subject'
+          - '4:5'
+      kind:
+        description: 'ভিডিওর ধরন (A=টিউটোরিয়াল, B=কার্টুন ব্যাখ্যা, C=ম্যাপ ও ডেটা)'
         required: true
-        default: 'Bengali Folk & Moral Story'
-      custom_script:
-        description: 'Optional Custom Script (Leave blank if AI should write)'
+        default: 'B'
+        type: choice
+        options:
+          - A
+          - B
+          - C
+      theme:
+        description: 'রঙ/পরিবেশ (warm, cool, dark, nature, bright)'
+        required: true
+        default: 'warm'
+      music:
+        description: 'গান'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - off
+          - upbeat
+          - calm
+      topic:
+        description: 'টপিক (script খালি হলে লাগবে)'
+        required: false
+        default: ''
+      project:
+        description: 'প্রিসেট (projects.json-এর নাম, ঐচ্ছিক)'
+        required: false
+        default: ''
+      brief:
+        description: 'অতিরিক্ত বিস্তারিত (ঐচ্ছিক)'
+        required: false
+        default: ''
+      script:
+        description: 'পূর্ণ স্ক্রিপ্ট (দিলে একটি শব্দও বদলাবে না)'
         required: false
         default: ''
 
+permissions:
+  contents: read
+
 jobs:
-  execute-pipeline:
+  pipeline:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 45
     steps:
-      - name: Checkout Repository Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js Environment
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Initialize Workspace & Runtime Config
-        run: |
-          mkdir -p src assets output
-          
-          # ফ্রন্টএন্ড বা ইনপুট থেকে পাওয়া ডেটা দিয়ে ডাইনামিক কনফিগার তৈরি
-          cat << 'EOF' > config.json
-          {
-            "mode": "${{ github.event.inputs.mode }}",
-            "aspect": "${{ github.event.inputs.aspect }}",
-            "topic": "${{ github.event.inputs.topic }}",
-            "customScript": "${{ github.event.inputs.custom_script }}"
-          }
-          EOF
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
 
-          # পাইপলাইন হ্যান্ডলার ও এক্সিকিউটর স্ক্রিপ্ট
-          cat << 'EOF' > pipeline.mjs
-          import fs from 'fs';
-          
-          try {
-            const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
-            console.log("=== VIDEO PIPELINE INITIALIZED ===");
-            console.log(`Execution Mode : ${config.mode}`);
-            console.log(`Aspect Ratio   : ${config.aspect}`);
-            console.log(`Topic          : ${config.topic}`);
-            if(config.customScript) {
-              console.log("Custom Script  : Provided by user");
-            }
-
-            // API Validation
-            const missingKeys = [];
-            if (!process.env.GEMINI_API_KEY) missingKeys.push('GEMINI_API_KEY');
-            if (!process.env.CARTESIA_API_KEY) missingKeys.push('CARTESIA_API_KEY');
-            if (!process.env.PEXELS_API_KEY) missingKeys.push('PEXELS_API_KEY');
-
-            if (missingKeys.length > 0) {
-              console.error(`ERROR: Missing required API keys in Secrets: ${missingKeys.join(', ')}`);
-              process.exit(1);
-            }
-
-            console.log("All API keys verified successfully. Executing generation workflow...");
-          } catch (err) {
-            console.error("Pipeline initialization failed:", err);
-            process.exit(1);
-          }
-          EOF
-
-      - name: Install Project Dependencies
-        run: |
-          npm init -y
-          npm install dotenv node-fetch remotion @remotion/cli
-
-      - name: Run Video Generation & Rendering Engine
+      - name: Run pipeline
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
+          CARTESIA_VOICE_ID: ${{ secrets.CARTESIA_VOICE_ID }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-        run: |
-          node pipeline.mjs
+          IN_MODE: ${{ inputs.mode }}
+          IN_MINUTES: ${{ inputs.minutes }}
+          IN_ASPECT: ${{ inputs.aspect }}
+          IN_KIND: ${{ inputs.kind }}
+          IN_THEME: ${{ inputs.theme }}
+          IN_MUSIC: ${{ inputs.music }}
+          IN_TOPIC: ${{ inputs.topic }}
+          IN_PROJECT: ${{ inputs.project }}
+          IN_BRIEF: ${{ inputs.brief }}
+          IN_SCRIPT: ${{ inputs.script }}
+        run: node pipeline.mjs
 
-      - name: Upload Final Video Artifacts
+      - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Final-Rendered-Video-Output
-          path: output/
+          name: video-output
+          path: |
+            out/
+            data/log.txt
+          if-no-files-found: warn
+          retention-days: 7
