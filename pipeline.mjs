@@ -153,7 +153,7 @@ async function gemini(prompt, { json = false, temp = 0.8 } = {}) {
           last = e;
           keyLog('gemini', ki, false, String(e).slice(0, 150));
           if (/HTTP 429/.test(String(e))) await waitMs(45000);
-          else if (/HTTP 503|AbortError|aborted/i.test(String(e))) await waitMs(15000);
+          else if (/HTTP 503|AbortError|aborted/i.test(String(e))) await waitMs(45000);
           if (/HTTP 4(29|03|00)/.test(String(e))) break;
         }
       }
