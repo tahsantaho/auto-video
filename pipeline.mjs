@@ -69,7 +69,7 @@ const T = (f, d = '') => { try { return fs.readFileSync(f, 'utf8'); } catch { re
 const W = (f, c) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, c); };
 
 const providers = {
-  script_models: ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-2.5-flash-lite'],
+  script_models: ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-3.5-flash-lite'],
   voice: ['cartesia_sonic3', 'edge_tts'],
   visual: ['pixabay_video', 'pixabay_photo', 'pollinations'],
   music: ['user_file', 'synth'],
@@ -95,10 +95,16 @@ const FPS = 30;
 const keyOk = (pool) => Array.isArray(pool) && pool.length > 0;
 const keyLog = (pool, i, ok, msg = '') => log(`${ok ? '✔ কী চলেছে' : '✖ কী ব্যর্থ'} [${pool==='gemini'?'Gemini':pool==='pixabay'?'Pixabay':pool==='pexels'?'Pexels':'Cartesia'}] #${i + 1}/${keyPools[pool]?.length || 0}${msg ? ' — ' + msg : ''}`);
 
+const waitMs = (ms) => new Promise(r => setTimeout(r, ms));
+
 const retry = async (n, fn, tag) => {
   let last;
   for (let i = 1; i <= n; i++) {
-    try { return await fn(i); } catch (e) { last = e; log(`${tag} চেষ্টা ${i}/${n} ব্যর্থ: ${String(e).slice(0, 200)}`); }
+    try { return await fn(i); } catch (e) {
+      last = e;
+      log(`${tag} চেষ্টা ${i}/${n} ব্যর্থ: ${String(e).slice(0, 200)}`);
+      if (i < n) await waitMs(i * 30000);
+    }
   }
   throw last;
 };
@@ -144,7 +150,8 @@ async function gemini(prompt, { json = false, temp = 0.8 } = {}) {
         } catch (e) {
           last = e;
           keyLog('gemini', ki, false, String(e).slice(0, 150));
-          if (/HTTP 429/.test(String(e)) && !(a === 2 && key === CFG.geminiKeys.at(-1))) await new Promise(r => setTimeout(r, 20000));
+          if (/HTTP 429/.test(String(e))) await waitMs(45000);
+          else if (/HTTP 503|AbortError|aborted/i.test(String(e))) await waitMs(15000);
           if (/HTTP 4(29|03|00)/.test(String(e))) break;
         }
       }
