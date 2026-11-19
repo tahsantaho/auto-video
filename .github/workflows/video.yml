@@ -266,7 +266,10 @@ jobs:
           echo '- **স্ক্রিপ্ট:** https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest-script.md' >> README.md
           echo '' >> README.md
           echo 'পুরোনো ভিডিও archive/ ফোল্ডারে (সর্বশেষ ১০টি রাখা হয়)।' >> README.md
-          git add -A
+          for f in README.md latest.mp4 latest-thumb.jpg latest-subs.srt latest-metadata.json latest-script.md latest-summary.json; do
+            [ -e "$f" ] && git add "$f" || true
+          done
+          [ -d archive ] && [ -n "$(ls -A archive 2>/dev/null)" ] && git add archive || true
           git commit -m "output: ${STAMP} (${GITHUB_RUN_ID})" || exit 0
           git push origin outputs
           echo "✅ সরাসরি লিংক: https://raw.githubusercontent.com/${{ github.repository }}/outputs/latest.mp4"
