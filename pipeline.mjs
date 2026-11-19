@@ -69,7 +69,7 @@ const T = (f, d = '') => { try { return fs.readFileSync(f, 'utf8'); } catch { re
 const W = (f, c) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, c); };
 
 const providers = {
-  script_models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
+  script_models: ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-2.5-flash-lite'],
   voice: ['cartesia_sonic3', 'edge_tts'],
   visual: ['pixabay_video', 'pixabay_photo', 'pollinations'],
   music: ['user_file', 'synth'],
@@ -144,6 +144,7 @@ async function gemini(prompt, { json = false, temp = 0.8 } = {}) {
         } catch (e) {
           last = e;
           keyLog('gemini', ki, false, String(e).slice(0, 150));
+          if (/HTTP 429/.test(String(e)) && !(a === 2 && key === CFG.geminiKeys.at(-1))) await new Promise(r => setTimeout(r, 20000));
           if (/HTTP 4(29|03|00)/.test(String(e))) break;
         }
       }
