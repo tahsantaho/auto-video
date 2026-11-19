@@ -190,6 +190,21 @@
     <div id="module-toggles"></div>
     <label>Edge-TTS ফলব্যাক বাংলা ভয়েস (ক্লোন কণ্ঠ ফেল করলে এটি ব্যবহৃত হবে)</label>
     <input type="text" id="f-edge-voice" placeholder="bn-BD-NabanitaNeural">
+    <div class="grid2">
+      <div>
+        <label>🗣️ ভয়েস-প্রিসেট (ক্লোন কণ্ঠের ধরন)</label>
+        <select id="f-voice-preset">
+          <option value="podcast">🎙️ পডকাস্ট — উষ্ণ, আলাপের মতো</option>
+          <option value="documentary">🎬 ডকুমেন্টারি — ধীর, গম্ভীর</option>
+          <option value="news">📰 নিউজ — স্পষ্ট, দ্রুত</option>
+          <option value="natural">🙂 স্বাভাবিক</option>
+        </select>
+      </div>
+      <div>
+        <label>⏸️ দৃশ্য-গ্যাপ (সেকেন্ড, 0–2)</label>
+        <input type="number" id="f-voice-gap" step="0.05" min="0" max="2" value="0.25">
+      </div>
+    </div>
     <p class="hint">ফলব্যাক ভয়েসে আপনার ক্লোন কণ্ঠ থাকবে না — নিচ থেকে নমুনা শুনে বেছে নিতে পারেন।</p>
     <details>
       <summary>🗣️ বাংলা ভয়েসের নমুনা-তালিকা</summary>
@@ -257,7 +272,7 @@ let disabled = {}; // key -> array of off values
 
 /* ---------- সেভ/লোড ---------- */
 function save() {
-  const st = { chains, disabled, form: { mode: $('#f-mode').value, minutes: $('#f-minutes').value, aspect: $('#f-aspect').value, aspectCustom: $('#f-aspect-custom').value, resolution: $('#f-resolution').value, kind: $('#f-kind').value, theme: $('#f-theme').value, music: $('#f-music').value, project: $('#f-project').value, topic: $('#f-topic').value, brief: $('#f-brief').value, script: $('#f-script').value, edgeVoice: $('#f-edge-voice').value } };
+  const st = { chains, disabled, form: { mode: $('#f-mode').value, minutes: $('#f-minutes').value, aspect: $('#f-aspect').value, aspectCustom: $('#f-aspect-custom').value, resolution: $('#f-resolution').value, kind: $('#f-kind').value, theme: $('#f-theme').value, music: $('#f-music').value, project: $('#f-project').value, topic: $('#f-topic').value, brief: $('#f-brief').value, script: $('#f-script').value, edgeVoice: $('#f-edge-voice').value, voicePreset: $('#f-voice-preset').value, voiceGap: $('#f-voice-gap').value } };
   localStorage.setItem(LS, JSON.stringify(st));
 }
 function load() {
@@ -280,6 +295,8 @@ function load() {
     if (f.brief) $('#f-brief').value = f.brief;
     if (f.script) $('#f-script').value = f.script;
     if (f.edgeVoice) $('#f-edge-voice').value = f.edgeVoice;
+    if (f.voicePreset) $('#f-voice-preset').value = f.voicePreset;
+    if (f.voiceGap) $('#f-voice-gap').value = f.voiceGap;
   } catch (e) {}
 }
 
@@ -412,7 +429,7 @@ function makeConfig() {
     },
     defaults: { mode: $('#f-mode').value, minutes: parseFloat($('#f-minutes').value) || 1.5, aspect: collectForm().aspect, resolution: $('#f-resolution').value || '', kind: $('#f-kind').value, theme: $('#f-theme').value, music: $('#f-music').value },
     modules: { sfx: mod.sfx !== false, subtitles: mod.subtitles !== false, thumbnail: mod.thumbnail !== false },
-    tts: { edge_voice: $('#f-edge-voice').value.trim() || 'bn-BD-NabanitaNeural' },
+    tts: { edge_voice: $('#f-edge-voice').value.trim() || 'bn-BD-NabanitaNeural', preset: $('#f-voice-preset').value, gap: Math.max(0, Math.min(2, parseFloat($('#f-voice-gap').value) || 0.25)) },
   };
 }
 function download(name, obj) {

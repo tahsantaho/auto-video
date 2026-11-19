@@ -36,6 +36,8 @@ const CFG = {
   theme: cfgVal('IN_THEME', 'theme', 'warm', s => s.toLowerCase().trim()),
   music: cfgVal('IN_MUSIC', 'music', 'auto', s => s.toLowerCase().trim(), ['auto', 'off', 'upbeat', 'calm']),
   edgeVoice: S('EDGE_VOICE') || (WCFG.tts && WCFG.tts.edge_voice) || 'bn-BD-NabanitaNeural',
+  voicePreset: (S('TTS_PRESET') || (WCFG.tts && WCFG.tts.preset) || 'podcast').trim(),
+  voiceGap: (() => { const g = parseFloat(S('VOICE_GAP') ?? (WCFG.tts && WCFG.tts.gap)); return Number.isFinite(g) ? Math.max(0, Math.min(2, g)) : 0.25; })(),
   topic: cfgVal('IN_TOPIC', 'topic', ''),
   project: cfgVal('IN_PROJECT', 'project', ''),
   brief: cfgVal('IN_BRIEF', 'brief', ''),
@@ -221,6 +223,14 @@ function silences(file) {
 
 const ttsText = (t) => { let s = t; for (const [a, b] of Object.entries(pronounce)) s = s.split(a).join(b); return s; };
 
+// প্রফেশনাল ভয়েস-প্রিসেট: ডকুমেন্টারি/পডকাস্ট/নিউজ/কার্টুন-ব্যাখ্যা
+const VOICE_PRESETS = {
+  podcast:     { name: 'পডকাস্ট — উষ্ণ, আলাপের মতো', extra: { speed: 0.95 }},
+  documentary: { name: 'ডকুমেন্টারি — ধীর, গম্ভীর', extra: { speed: 0.88 }},
+  news:        { name: 'নিউজ — স্পষ্ট, দ্রুত', extra: { speed: 1.05 }},
+  natural:     { name: 'স্বাভাবিক', extra: {} },
+};
+
 async function voiceCartesia(text, file) {
   if (!keyOk(CFG.cartesiaKeys)) throw new Error('CARTESIA_API_KEY / CARTESIA_API_KEYS কোনোটিই নেই');
   const voiceIds = CFG.voiceIds.length ? CFG.voiceIds : [CFG.voiceId];
@@ -230,7 +240,8 @@ async function voiceCartesia(text, file) {
     for (const key of CFG.cartesiaKeys) {
       const ki = CFG.cartesiaKeys.indexOf(key);
       try {
-        const body = { model_id: 'sonic-3', transcript: text, voice: vid, language: 'bn', output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 } };
+        const preset = VOICE_PRESETS[CFG.voicePreset] || VOICE_PRESETS.podcast;
+        const body = { model_id: 'sonic-3', transcript: text, voice: vid, language: 'bn', ...preset.extra, output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 } };
         if (process.env.CARTESIA_EXTRA) Object.assign(body, tryParseJson('{' + process.env.CARTESIA_EXTRA + '}'));
         const r = await jfetch('https://api.cartesia.ai/tts/bytes', {
           method: 'POST',
@@ -251,8 +262,10 @@ async function voiceEdge(text, file) {
   const inst = spawnSync('python3', ['-m', 'edge_tts', '--help'], { encoding: 'utf8', timeout: 60000 });
   if (inst.status !== 0) run('python3', ['-m', 'pip', 'install', '--quiet', 'edge-tts'], 'pip-edge-tts', 180000);
   const v = process.env.EDGE_VOICE || CFG.edgeVoice;
+  const preset = VOICE_PRESETS[CFG.voicePreset] || VOICE_PRESETS.podcast;
+  const rate = preset.extra.speed ? `--rate=${Math.round((preset.extra.speed - 1) * 100)}%` : '';
   W('/tmp/tts_input.txt', text);
-  run('python3', ['-m', 'edge_tts', `--voice=${v}`, '--file=/tmp/tts_input.txt', `--write-media=${file}`], 'edge-tts', 180000);
+  run('python3', ['-m', 'edge_tts', `--voice=${v}`, ...(rate ? [rate] : []), '--file=/tmp/tts_input.txt', `--write-media=${file}`], 'edge-tts', 180000);
   if (fs.statSync(file).size < 1000) throw new Error('edge-tts অডিও খুব ছোট');
   return file;
 }
@@ -294,7 +307,8 @@ async function buildVoice(scenes) {
           s.dur = Math.max(0.8, probeSec(f));
         }, `ভয়েস ${provider} দৃশ্য ${s.index}`);
       }
-      let acc = 0; scenes.forEach(s => { s.start = +acc.toFixed(2); acc += s.dur + 0.25; });
+      let acc = 0; scenes.forEach(s => { s.start = +acc.toFixed(2); acc += s.dur + CFG.voiceGap; });
+      log(`ভয়েস: প্রিসেট=${CFG.voicePreset}, দৃশ্য-গ্যাপ=${CFG.voiceGap} সেকেন্ড`);
       concatVoice(scenes, `${OUT}/voice_full.mp3`);
       log(`ভয়েস পথ: ${provider}${provider === 'cartesia_sonic3' ? ' (আপনার ক্লোন)' : ' (ফলব্যাক, ক্লোন নয়)'}, মোট ${acc.toFixed(1)} সেকেন্ড`);
       return { file: `${OUT}/voice_full.mp3`, path: provider, total: acc };
