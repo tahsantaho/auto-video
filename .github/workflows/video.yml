@@ -129,9 +129,10 @@ jobs:
       - name: Install dependencies
         if: steps.gate.outputs.should_run == 'true'
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-bengali
-          fc-list | grep -i -m2 bengali || true
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           ffmpeg -version | head -1
+          sudo apt-get install -y -qq fonts-noto-core || echo "ফন্ট প্যাকেজ পাওয়া যায়নি — Google Fonts ব্যবহার হবে"
+          fc-list | grep -i -m2 bengali || echo "সিস্টেম ফন্ট নেই — রেন্ডারে Google Fonts CDN থেকে ফন্ট আসবে"
           npm install --no-audit --no-fund
 
       - name: Combine multi-key secrets
@@ -198,6 +199,7 @@ jobs:
 
       - name: Optional - upload to Google Drive (checkpoint)
         if: always() && steps.gate.outputs.should_run == 'true' && hashFiles('out/*.mp4') != ''
+        continue-on-error: true
         env:
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
