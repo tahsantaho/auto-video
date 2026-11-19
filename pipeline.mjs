@@ -277,6 +277,7 @@ function concatVoice(scenes, out) {
 }
 
 const OUT = 'out';
+const PUB = 'public';
 
 async function buildVoice(scenes) {
   if (fs.existsSync('assets/voice.mp3')) {
@@ -381,10 +382,10 @@ async function buildVisuals(scenes, rw, rh) {
     let done = false;
     for (const v of chain) {
       try {
-        if (v === 'pixabay_video') { s.asset = await pixabay(s.imageQuery, `${OUT}/scene-${s.index}.mp4`, true); s.assetType = 'video'; done = true; }
-        else if (v === 'pixabay_photo') { s.asset = await pixabay(s.imageQuery, `${OUT}/scene-${s.index}.jpg`, false); s.assetType = 'photo'; done = true; }
-        else if (v === 'pexels_photo') { s.asset = await pexelsPhoto(s.imageQuery, `${OUT}/scene-${s.index}.jpg`); s.assetType = 'photo'; done = true; }
-        else if (v === 'pollinations') { s.asset = await pollinations(s.imageQuery, `${OUT}/scene-${s.index}.jpg`, rw, rh); s.assetType = 'photo'; done = true; }
+        if (v === 'pixabay_video') { await pixabay(s.imageQuery, `${PUB}/scene-${s.index}.mp4`, true); s.asset = `scene-${s.index}.mp4`; s.assetType = 'video'; done = true; }
+        else if (v === 'pixabay_photo') { await pixabay(s.imageQuery, `${PUB}/scene-${s.index}.jpg`, false); s.asset = `scene-${s.index}.jpg`; s.assetType = 'photo'; done = true; }
+        else if (v === 'pexels_photo') { await pexelsPhoto(s.imageQuery, `${PUB}/scene-${s.index}.jpg`); s.asset = `scene-${s.index}.jpg`; s.assetType = 'photo'; done = true; }
+        else if (v === 'pollinations') { await pollinations(s.imageQuery, `${PUB}/scene-${s.index}.jpg`, rw, rh); s.asset = `scene-${s.index}.jpg`; s.assetType = 'photo'; done = true; }
         if (done) break;
       } catch (e) { log(`ছবি দৃশ্য ${s.index} পথ ${v} ব্যর্থ: ${String(e).slice(0, 120)}`); }
     }
@@ -398,18 +399,18 @@ function buildMusic(total, mood) {
   if (CFG.music === 'off') { log('গান: বন্ধ রাখা হয়েছে'); return null; }
   if (fs.existsSync('assets/music.mp3')) { log('গান: assets/music.mp3 ব্যবহার'); return { file: 'assets/music.mp3', volume: 0.14 }; }
   const mv = ['upbeat', 'calm'].includes(CFG.music) ? CFG.music : (mood === 'calm' ? 'calm' : 'upbeat');
-  run('node', ['tools/synth_audio.mjs', 'music', mv, `${OUT}/music_raw.wav`, String(Math.min(240, Math.ceil(total) + 2))], 'synth-music', 120000);
-  run('ffmpeg', ['-y', '-i', `${OUT}/music_raw.wav`, '-c:a', 'libmp3lame', '-q:a', '5', `${OUT}/music.mp3`], 'music-mp3', 120000);
+  run('node', ['tools/synth_audio.mjs', 'music', mv, `${PUB}/music_raw.wav`, String(Math.min(240, Math.ceil(total) + 2))], 'synth-music', 120000);
+  run('ffmpeg', ['-y', '-i', `${PUB}/music_raw.wav`, '-c:a', 'libmp3lame', '-q:a', '5', `${PUB}/music.mp3`], 'music-mp3', 120000);
   log(`গান: অটো-সিন্থ (${mv})`);
-  return { file: `${OUT}/music.mp3`, volume: 0.12 };
+  return { file: 'music.mp3', volume: 0.12 };
 }
 
 function buildSfx() {
   if (WCFGM.sfx === false) { log('এসএফএক্স: বন্ধ (কনফিগ)'); return; }
   if (process.env.PIPE_DRY === '1') return;
-  fs.mkdirSync(`${OUT}/sfx`, { recursive: true });
-  if (fs.existsSync(`${OUT}/sfx/pop.wav`)) return;
-  for (const sfx of ['pop', 'ding', 'whoosh']) run('node', ['tools/synth_audio.mjs', 'sfx', sfx, `${OUT}/sfx/${sfx}.wav`], `sfx-${sfx}`, 60000);
+  fs.mkdirSync(`${PUB}/sfx`, { recursive: true });
+  if (fs.existsSync(`${PUB}/sfx/pop.wav`)) return;
+  for (const sfx of ['pop', 'ding', 'whoosh']) run('node', ['tools/synth_audio.mjs', 'sfx', sfx, `${PUB}/sfx/${sfx}.wav`], `sfx-${sfx}`, 60000);
   log('এসএফএক্স: সিন্থ pop/ding/whoosh তৈরি');
 }
 
@@ -456,6 +457,7 @@ const main = async () => {
   W('data/last_run.json', JSON.stringify({ run_id: CFG.runId, mode: CFG.mode, started_at: new Date().toISOString() }, null, 2));
   log(`শুরু: run_id=${CFG.runId}, mode=${CFG.mode}, minutes=${CFG.minutes}, aspect=${CFG.aspect}, kind=${CFG.kind}, theme=${CFG.theme}, music=${CFG.music}, project=${CFG.project || '-'}`);
   fs.mkdirSync(OUT, { recursive: true });
+  fs.mkdirSync(PUB, { recursive: true });
 
   const plan = await retry(3, buildScript, 'স্ক্রিপ্ট-ধাপ');
   W(`${OUT}/script.md`, plan.narration || '');
@@ -502,7 +504,7 @@ const main = async () => {
   const props = {
     fps: FPS, width: RW, height: RH, kind: plan.kind, theme: plan.theme,
     music, scenes: rawScenes,
-    thumb: { text: plan.thumbText || plan.title || 'ভিডিও', asset: rawScenes[0]?.asset || null, kind: plan.kind },
+    thumb: { text: plan.thumbText || plan.title || 'ভিডিও', asset: (rawScenes.find(s => s.assetType === 'photo') || {}).asset || null, kind: plan.kind },
   };
   W(`${OUT}/props.json`, JSON.stringify(props, null, 1));
 

@@ -51,7 +51,7 @@ const Scene = ({ scene }) => {
   const fadeIn = interpolate(f, [0, TRANS], [0, 1], { extrapolateRight: 'clamp' });
   const slide = interpolate(f, [0, TRANS], [40, 0], { extrapolateRight: 'clamp' });
   return (
-    <Sequence durationInFrames={Math.max(2, Math.ceil(scene.dur * fps)) + TRANS}>
+    <Sequence from={Math.max(0, Math.round((scene.start || 0) * fps))} durationInFrames={Math.max(2, Math.ceil(scene.dur * fps)) + TRANS}>
       <AbsoluteFill style={{ opacity: fadeIn, transform: `translateX(${slide}px)` }}>
         <Background scene={scene} />
         <Vignette />

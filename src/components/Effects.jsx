@@ -144,9 +144,9 @@ export default function Effect({ spec, atGlobal, scene }) {
   return (
     <>
       {local < 3 && (spec.startsWith('icon') || spec.startsWith('stamp')) ? (
-        <Audio src={staticFile('out/sfx/pop.wav')} volume={0.5} />
+        <Audio src={staticFile('sfx/pop.wav')} volume={0.5} />
       ) : null}
-      {local < 3 && spec === 'quiz' ? <Audio src={staticFile('out/sfx/ding.wav')} volume={0.4} /> : null}
+      {local < 3 && spec === 'quiz' ? <Audio src={staticFile('sfx/ding.wav')} volume={0.4} /> : null}
       {fn({ spec, f: local, fps })}
     </>
   );
