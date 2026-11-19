@@ -1,0 +1,26 @@
+{
+  "note": "এই ফাইলটি ড্যাশবোর্ড (docs/index.html) থেকে আপডেট করা যায় — কোড ছোঁয়ার দরকার নেই। এখানে যা বদলাবেন, pipeline পরের রানে সেটিই কাজ করবে। প্রাধিক্রম (priority): রান-ইনপুট > run.spec.json > এই ফাইল > ডিফল্ট। API কী কখনো এখানে লিখবেন না — সেটা শুধু GitHub Secrets-এ।",
+  "providers": {
+    "script_models": ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"],
+    "voice": ["cartesia_sonic3", "edge_tts"],
+    "visual": ["pixabay_video", "pixabay_photo", "pollinations"],
+    "music": ["user_file", "synth"]
+  },
+  "defaults": {
+    "mode": "draft",
+    "minutes": 1.5,
+    "aspect": "9:16",
+    "resolution": "",
+    "kind": "B",
+    "theme": "warm",
+    "music": "auto"
+  },
+  "modules": {
+    "sfx": true,
+    "subtitles": true,
+    "thumbnail": true
+  },
+  "tts": {
+    "edge_voice": "bn-BD-NabanitaNeural"
+  }
+}

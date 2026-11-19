@@ -32,6 +32,16 @@ on:
           - '16:9'
           - '1:1'
           - '4:5'
+      resolution:
+        description: 'রেজোলিউশন (খালি = ডিফল্ট)'
+        required: false
+        default: ''
+        type: choice
+        options:
+          - ''
+          - '480p'
+          - '720p'
+          - '1080p'
       kind:
         description: 'ভিডিওর ধরন (A=টিউটোরিয়াল, B=কার্টুন ব্যাখ্যা, C=ম্যাপ ও ডেটা)'
         required: true
@@ -68,9 +78,11 @@ on:
         required: false
         default: ''
       script:
-        description: 'পূর্ণ স্ক্রিপ্ট (দিলে একটি শব্দও বদলাবে না)'
+        description: 'পুরো স্ক্রিপ্ট (দিলে একটি শব্দও বদলাবে না)'
         required: false
         default: ''
+  repository_dispatch:
+    types: [run-video]
 
 permissions:
   contents: read
@@ -88,9 +100,19 @@ jobs:
 
       - name: Gate - new run requested?
         id: gate
+        env:
+          PIPE_PASSPHRASE: ${{ secrets.PIPE_PASSPHRASE }}
         run: |
           EVENT="${{ github.event_name }}"
           SHOULD="false"
+          if [ "$EVENT" = "repository_dispatch" ] && [ -n "$PIPE_PASSPHRASE" ]; then
+            GOT="${{ github.event.client_payload.passphrase }}"
+            if [ "$GOT" != "$PIPE_PASSPHRASE" ]; then
+              echo "::warning::Apps Script পাসফ্রেজ মেলেনি — রান বাতিল"
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
           if [ "$EVENT" != "push" ]; then
             SHOULD="true"
           elif [ -f data/run.spec.json ]; then
@@ -107,21 +129,64 @@ jobs:
       - name: Install dependencies
         if: steps.gate.outputs.should_run == 'true'
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-bengali
+          fc-list | grep -i -m2 bengali || true
           ffmpeg -version | head -1
           npm install --no-audit --no-fund
+
+      - name: Combine multi-key secrets
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+          GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+          GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
+          PIXABAY_API_KEYS: ${{ secrets.PIXABAY_API_KEYS }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          PIXABAY_API_KEY_2: ${{ secrets.PIXABAY_API_KEY_2 }}
+          PIXABAY_API_KEY_3: ${{ secrets.PIXABAY_API_KEY_3 }}
+          PIXABAY_API_KEY_4: ${{ secrets.PIXABAY_API_KEY_4 }}
+          PIXABAY_API_KEY_5: ${{ secrets.PIXABAY_API_KEY_5 }}
+          CARTESIA_API_KEYS: ${{ secrets.CARTESIA_API_KEYS }}
+          CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
+          PEXELS_API_KEYS: ${{ secrets.PEXELS_API_KEYS }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          append() {
+            local name="$1" all="$2"; shift 2
+            for extra in "$@"; do
+              if [ -n "$extra" ]; then all="$all${all:+,}$extra"; fi
+            done
+            if [ -n "$(echo "$all" | tr -d '[:space:],')" ]; then
+              echo "$name=$all" >> "$GITHUB_ENV"
+            fi
+          }
+          # একাধিক কী: কমা-সিক্রেট বা নম্বর-সিক্রেট (KEY_2..KEY_5) — যাই দেওয়া থাকুক, একসাথে জুড়ে নেয়
+          append GEMINI_API_KEYS "$GEMINI_API_KEYS" "$GEMINI_API_KEY_2" "$GEMINI_API_KEY_3" "$GEMINI_API_KEY_4" "$GEMINI_API_KEY_5"
+          append PIXABAY_API_KEYS "$PIXABAY_API_KEYS" "$PIXABAY_API_KEY_2" "$PIXABAY_API_KEY_3" "$PIXABAY_API_KEY_4" "$PIXABAY_API_KEY_5"
 
       - name: Run pipeline
         if: steps.gate.outputs.should_run == 'true'
         env:
+          GEMINI_API_KEYS: ${{ env.GEMINI_API_KEYS }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CARTESIA_API_KEYS: ${{ secrets.CARTESIA_API_KEYS }}
           CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
           CARTESIA_VOICE_ID: ${{ secrets.CARTESIA_VOICE_ID }}
+          CARTESIA_VOICE_IDS: ${{ secrets.CARTESIA_VOICE_IDS }}
+          CARTESIA_EXTRA: ${{ secrets.CARTESIA_EXTRA }}
+          PIXABAY_API_KEYS: ${{ env.PIXABAY_API_KEYS }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          PEXELS_API_KEYS: ${{ secrets.PEXELS_API_KEYS }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          EDGE_VOICE: ${{ secrets.EDGE_VOICE }}
+          GEMINI_MODEL_CHAIN: ${{ secrets.GEMINI_MODEL_CHAIN }}
           IN_MODE: ${{ inputs.mode }}
           IN_MINUTES: ${{ inputs.minutes }}
           IN_ASPECT: ${{ inputs.aspect }}
+          IN_RESOLUTION: ${{ inputs.resolution }}
           IN_KIND: ${{ inputs.kind }}
           IN_THEME: ${{ inputs.theme }}
           IN_MUSIC: ${{ inputs.music }}
@@ -130,6 +195,19 @@ jobs:
           IN_BRIEF: ${{ inputs.brief }}
           IN_SCRIPT: ${{ inputs.script }}
         run: node pipeline.mjs
+
+      - name: Optional - upload to Google Drive (checkpoint)
+        if: always() && steps.gate.outputs.should_run == 'true' && hashFiles('out/*.mp4') != ''
+        env:
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+        run: |
+          for f in out/*.mp4; do
+            [ -e "$f" ] || continue
+            node tools/drive_upload.mjs "$f" "$(basename "$f")" video/mp4 || true
+          done
 
       - name: Upload artifacts
         if: always() && steps.gate.outputs.should_run == 'true'
