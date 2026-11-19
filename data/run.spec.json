@@ -1,14 +1,15 @@
 {
   "enabled": true,
-  "run_id": "r6-voice-mini",
-  "mode": "voice_test",
-  "minutes": 0.1,
+  "run_id": "step2-topic-full",
+  "mode": "draft",
+  "minutes": 1.5,
   "aspect": "9:16",
+  "resolution": "720p",
   "kind": "B",
   "theme": "warm",
   "music": "auto",
-  "topic": "",
+  "topic": "মোবাইলের ব্যাটারি দ্রুত ফুরিয়ে যায় কেন — ৫টি কারণ ও সমাধান",
   "project": "",
-  "brief": "",
-  "script": "কথা বাড়ছে ভোটের প্রস্তুতি ধানের আসরে। বিপরীত শিবিরের সমর্থন তিনি স্পষ্ট করে জানালেন না।"
+  "brief": "সাধারণ মানুষের জন্য কথ্য বাংলায়, উদাহরণসহ।",
+  "script": ""
 }
