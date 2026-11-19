@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ভিজ্যুয়াল ভিডিও স্টুডিও — কাস্টমাইজার</title>
+<style>
+  :root {
+    --bg: #0b0f1a; --card: #141a2b; --card2: #1b2340; --line: #2a3352;
+    --text: #eef2ff; --dim: #93a0c4; --accent: #38bdf8; --accent2: #a78bfa;
+    --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --radius: 14px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Noto Sans Bengali', 'Hind Siliguri', system-ui, sans-serif; line-height: 1.55; }
+  header { padding: 18px 16px 8px; text-align: center; }
+  header h1 { font-size: 1.35rem; margin: 0 0 4px; }
+  header p { color: var(--dim); margin: 0; font-size: .85rem; }
+  main { max-width: 860px; margin: 0 auto; padding: 10px 12px 90px; }
+  .section { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); margin: 14px 0; padding: 14px; }
+  .section > h2 { font-size: 1.05rem; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .badge { font-size: .68rem; background: var(--card2); border: 1px solid var(--line); color: var(--dim); border-radius: 999px; padding: 2px 10px; font-weight: normal; }
+  .hint { color: var(--dim); font-size: .82rem; margin: 6px 0; }
+  .warnbox { background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.4); color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: .84rem; margin: 8px 0; }
+  .okbox { background: rgba(74,222,128,.08); border: 1px solid rgba(74,222,128,.4); color: var(--ok); border-radius: 10px; padding: 10px 12px; font-size: .84rem; margin: 8px 0; }
+  label { display: block; font-size: .84rem; color: var(--dim); margin: 10px 0 4px; }
+  select, input[type=text], input[type=number], textarea {
+    width: 100%; background: var(--card2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 12px; font-size: .95rem; font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  @media (max-width: 520px) { .grid3 { grid-template-columns: 1fr 1fr; } }
+  .row { display: flex; gap: 8px; align-items: center; }
+  button {
+    background: var(--card2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 9px 14px; font-size: .9rem; font-family: inherit; cursor: pointer;
+  }
+  button:active { transform: scale(.97); }
+  button.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; color: #06121f; font-weight: 700; }
+  button.ghost { background: transparent; }
+  button.mini { padding: 5px 9px; font-size: .82rem; border-radius: 8px; }
+  button.danger { color: var(--bad); }
+  /* চেইন আইটেম */
+  .chain { list-style: none; margin: 8px 0 0; padding: 0; }
+  .chain li {
+    display: flex; gap: 8px; align-items: center; background: var(--card2);
+    border: 1px solid var(--line); border-radius: 10px; padding: 7px 9px; margin: 7px 0;
+  }
+  .chain li.drag-over { border-color: var(--accent); }
+  .chain li.off { opacity: .45; }
+  .chain li .drag { cursor: grab; color: var(--dim); padding: 0 4px; user-select: none; }
+  .chain input[type=text] { flex: 1; padding: 7px 10px; font-size: .88rem; }
+  .chain li[draggable=true] { touch-action: none; }
+  .chain li.dragging { opacity: .4; }
+  /* টগল */
+  .toggle { display: flex; justify-content: space-between; align-items: center; background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+  .toggle span { font-size: .92rem; }
+  .sw { position: relative; width: 46px; height: 26px; flex: none; }
+  .sw input { opacity: 0; width: 100%; height: 100%; position: absolute; margin: 0; cursor: pointer; }
+  .sw i { position: absolute; inset: 0; background: #3a4468; border-radius: 999px; transition: .2s; pointer-events: none; }
+  .sw i::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; background: #fff; border-radius: 50%; transition: .2s; }
+  .sw input:checked + i { background: var(--accent); }
+  .sw input:checked + i::after { transform: translateX(20px); }
+  /* ফ্লোটিং অ্যাকশন */
+  .fab-wrap { position: fixed; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--bg) 65%, transparent); padding: 14px 12px 16px; }
+  .fab-wrap .inner { max-width: 860px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .fab-wrap button { padding: 13px 8px; font-size: .95rem; }
+  details { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; font-size: .88rem; }
+  summary { cursor: pointer; font-weight: 600; }
+  details ol, details ul { padding-left: 20px; margin: 8px 0; }
+  details li { margin: 4px 0; }
+  code { background: #0d1322; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: .82rem; word-break: break-all; }
+  .toast { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); background: var(--ok); color: #04140a; font-weight: 700; padding: 10px 18px; border-radius: 999px; font-size: .88rem; opacity: 0; transition: .25s; pointer-events: none; z-index: 50; max-width: 92%; text-align: center; }
+  .toast.show { opacity: 1; }
+  #monitor { width: 100%; min-height: 120px; background: #0d1322; color: var(--dim); font-family: monospace; font-size: .78rem; padding: 10px; border: 1px solid var(--line); border-radius: 10px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 ভিজ্যুয়াল ভিডিও স্টুডিও</h1>
+  <p>কোড ছাড়াই সব সেটিংস — ফলব্যাক চেইন, মাল্টি API কী ব্যবস্থা, রান স্পেসা</p>
+</header>
+<main>
+
+  <!-- ১. রান সেটিংস -->
+  <section class="section">
+    <h2>▶️ এক-ক্লিক রান <span class="badge">run.spec.json</span></h2>
+    <p class="hint">নিচের সেটিংস ঠিক করে <b>রান-ফাইল ডাউনলোড</b> চাপুন। তারপর গাইডের মতো ফাইলটি রিপোজিটরিতে আপলোড করলেই পরের পুশে অটো-রান হবে।</p>
+    <div class="grid2">
+      <div>
+        <label>মোড</label>
+        <select id="f-mode">
+          <option value="script_only">শুধু লেখা (দ্রুত)</option>
+          <option value="voice_test">লেখা + কণ্ঠ</option>
+          <option value="draft">দ্রুত ভিডিও খসড়া</option>
+          <option value="full">সেরা মান (ধীর)</option>
+        </select>
+      </div>
+      <div>
+        <label>দৈর্ঘ্য (মিনিট)</label>
+        <input type="number" id="f-minutes" step="0.25" min="0.25" max="10" value="1.5">
+      </div>
+      <div>
+        <label>সাইজ (অনুপাত)</label>
+        <select id="f-aspect">
+          <option value="9:16">9:16 — রিলস/শর্টস</option>
+          <option value="16:9">16:9 — ইউটিউব</option>
+          <option value="1:1">1:1 — ফেসবুক</option>
+          <option value="4:5">4:5 — ফিড</option>
+          <option value="custom">কাস্টম (px)</option>
+        </select>
+        <input type="text" id="f-aspect-custom" placeholder="যেমন 720x1280" style="display:none; margin-top:6px;">
+      </div>
+      <div>
+        <label>রেজোলিউশন</label>
+        <select id="f-resolution">
+          <option value="">ডিফল্ট</option>
+          <option value="480p">480p (দ্রুত)</option>
+          <option value="720p">720p (মাঝারি)</option>
+          <option value="1080p">1080p (সেরা)</option>
+        </select>
+      </div>
+      <div>
+        <label>ভিডিওর ধরন</label>
+        <select id="f-kind">
+          <option value="A">A — স্ক্রিন/টুল টিউটোরিয়াল</option>
+          <option value="B">B — কার্টুন ব্যাখ্যা + কুইজ</option>
+          <option value="C">C — ম্যাপ ও ডেটা</option>
+        </select>
+      </div>
+      <div>
+        <label>রঙ/পরিবেশ</label>
+        <select id="f-theme">
+          <option value="warm">warm</option><option value="cool">cool</option>
+          <option value="dark">dark</option><option value="nature">nature</option>
+          <option value="bright">bright</option>
+        </select>
+      </div>
+      <div>
+        <label>গান</label>
+        <select id="f-music">
+          <option value="auto">অটো</option><option value="off">বন্ধ</option>
+          <option value="upbeat">upbeat</option><option value="calm">calm</option>
+        </select>
+      </div>
+      <div>
+        <label>প্রিসেট (projects.json)</label>
+        <select id="f-project"><option value="">— নেই —</option></select>
+      </div>
+    </div>
+    <label>টপিক (খালি রাখলে অটো)</label>
+    <input type="text" id="f-topic" placeholder="যেমন: পোক্সো ভাইরাস কীভাবে ছড়ায়">
+    <label>অতিরিক্ত নির্দেশ (Brief)</label>
+    <input type="text" id="f-brief" placeholder="ঐচ্ছিক">
+    <label>পুরো স্ক্রিপ্ট নিজে দিতে চাইলে (ঐচ্ছিক)</label>
+    <textarea id="f-script" placeholder="খালি রাখলে Gemini নিজে লিখবে"></textarea>
+    <div class="okbox">রান-ফাইলে কোনো API কী বা টোকেন যায় না — শুধু কী ভিডিও বানাবেন সেটাই।</div>
+  </section>
+
+  <!-- ২. API কী -->
+  <section class="section">
+    <h2>🔑 মাল্টি API কী সেটআপ <span class="badge">GitHub Secrets</span></h2>
+    <div class="warnbox">⚠️ কী কখনো এই পেজে, কোডে বা রিপোতে পাবলিকভাবে রাখবেন না। সব কী শুধু <b>Settings → Secrets and variables → Actions</b>-এ যাবে। এই পেজ কোনো কী সেভ বা পাঠায় না — নিচের হিসাব-নিকাশও শুধু আপনার ফোনে হয়।</div>
+    <p class="hint">একই সার্ভিসের একাধিক কী এক সিক্রেটে কমা দিয়ে বসান; একটি কী-তে লিমিট/এরর হলে পাইপলাইন নিজেই পরেরটিতে চলে যায়। পুরনো একক সিক্রেটও (যেমন <code>GEMINI_API_KEY</code>) কাজ করবে।</p>
+    <table>
+      <tbody id="key-table"></tbody>
+    </table>
+    <details>
+      <summary>🧮 কী-ফরম্যাট প্রস্তুতকারী (ফোনে, নিরাপদ)</summary>
+      <p class="hint">কী-গুলো আলাদা লাইনে পেস্ট করুন — উনাকে কমা-ফরম্যাটে ছাঁটাই করে দেখাবে। ফলাফল কোথাও সংরক্ষণ হয় না; কপি করে Secrets-এ বসান।</p>
+      <textarea id="key-input" placeholder="খালি জায়গা দিয়ে একটার পর একটা কী পেস্ট করুন..."></textarea>
+      <div class="row" style="margin-top:8px;"><button id="key-format" class="mini">ছাঁটাই করে দেখাও</button><span id="key-count" class="hint"></span></div>
+      <input type="text" id="key-output" readonly placeholder="ফলাফল এখানে মূলত হারাবেন না — সরাসরি Secrets-এ পেস্ট করুন">
+      <p class="hint">💡 আরও নিরাপদ: প্রতিটি কী আলাদা সিক্রেটে বসাতে চাইলে <code>GEMINI_API_KEY</code>, <code>GEMINI_API_KEY_2</code>, <code>GEMINI_API_KEY_3</code>… নাম দিতে পারেন — ওয়ার্কফ্লো সেগুলো একসাথে জুড়ে <code>GEMINI_API_KEYS</code> বানিয়ে নেয়।</p>
+    </details>
+  </section>
+
+  <!-- ৩. ফলব্যাক চেইন -->
+  <section class="section">
+    <h2>🛡️ ফলব্যাক চেইন <span class="badge">workflow_config.json</span></h2>
+    <p class="hint">প্রতিটি ধাপে উপর থেকে চেষ্টা হবে; একটি ফেল/লিমিট করলে নিচের টুলে অটো-সুইচ। অর্ডার বদলান (▲▼ বা ড্র্যাগ), অফ/অন করুন, নতুন টুল যোগ করুন।</p>
+    <div id="chains"></div>
+  </section>
+
+  <!-- ৪. মডিউল -->
+  <section class="section">
+    <h2>🧩 মডিউল অন/অফ</h2>
+    <div id="module-toggles"></div>
+    <label>Edge-TTS ফলব্যাক বাংলা ভয়েস (ক্লোন কণ্ঠ ফেল করলে এটি ব্যবহৃত হবে)</label>
+    <input type="text" id="f-edge-voice" placeholder="bn-BD-NabanitaNeural">
+    <div class="grid2">
+      <div>
+        <label>🗣️ ভয়েস-প্রিসেট (ক্লোন কণ্ঠের ধরন)</label>
+        <select id="f-voice-preset">
+          <option value="podcast">🎙️ পডকাস্ট — উষ্ণ, আলাপের মতো</option>
+          <option value="documentary">🎬 ডকুমেন্টারি — ধীর, গম্ভীর</option>
+          <option value="news">📰 নিউজ — স্পষ্ট, দ্রুত</option>
+          <option value="natural">🙂 স্বাভাবিক</option>
+        </select>
+      </div>
+      <div>
+        <label>⏸️ দৃশ্য-গ্যাপ (সেকেন্ড, 0–2)</label>
+        <input type="number" id="f-voice-gap" step="0.05" min="0" max="2" value="0.25">
+      </div>
+    </div>
+    <p class="hint">ফলব্যাক ভয়েসে আপনার ক্লোন কণ্ঠ থাকবে না — নিচ থেকে নমুনা শুনে বেছে নিতে পারেন।</p>
+    <details>
+      <summary>🗣️ বাংলা ভয়েসের নমুনা-তালিকা</summary>
+      <ul>
+        <li><code>bn-BD-NabanitaNeural</code> (নারী, বাংলাদেশ)</li>
+        <li><code>bn-BD-PradeepNeural</code> (পুরুষ, বাংলাদেশ)</li>
+        <li><code>bn-IN-BashkarNeural</code> (পুরুষ, ভারত)</li>
+        <li><code>bn-IN-TanishaaNeural</code> (নারী, ভারত)</li>
+      </ul>
+    </details>
+  </section>
+
+  <!-- ৫. নির্দেশনা -->
+  <section class="section">
+    <h2>📖 স্ক্রিপ্ট-নিয়ম ও উচ্চারণ <span class="badge">project.txt / pronounce.json</span></h2>
+    <p class="hint">এই দুটি ফাইল এখন ছবির সেটিংসে সরাসরি রিপোর <b>Add file</b> দিয়ে বদলাতে হয় (তাতে আলাদা ডাউনলোড লাগে না):</p>
+    <ul style="color:var(--dim); font-size:.86rem; padding-left:20px;">
+      <li><code>project.txt</code> — Gemini কী ধরনের লেখক হবে তার নিয়ম।</li>
+      <li><code>pronounce.json</code> — ইংরেজি শব্দের বাংলা উচ্চারণ-তালিকা (JSON: "ভিডিও": "ভিডিও")।</li>
+      <li><code>projects.json</code> — প্রিসেট (dropdown-এ দেখাবে)।</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2>📟 ড্যাশবোর্ড যাচাই</h2>
+    <p class="hint">নিচের রিপো-স্ট্যাটাস বাটনে চাপলে রিপোর সর্বশেষ Actions রানের ফল দেখা যাবে (পাবলিক রিপো, কোনো টোকেন লাগে না)। Secrets-এ কী আছে কিনা তা কখনো দেখা যায় না — GitHub নীতিমালা।</p>
+    <div class="row"><button id="check-btn" class="primary mini">🔄 রান-স্ট্যাটাস আনো</button><span id="check-repo" class="hint"></span></div>
+    <div id="monitor" style="margin-top:8px;"></div>
+  </section>
+</main>
+
+<!-- ফ্লোটিং অ্যাকশন -->
+<div class="fab-wrap"><div class="inner">
+  <button class="primary" id="btn-run">📥 রান-ফাইল ডাউনলোড</button>
+  <button id="btn-config">⚙️ কনফিগ ডাউনলোড</button>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const REPO = 'tahsantaho/auto-video';
+const LS = 'vv_studio_settings_v1';
+const $ = (s) => document.querySelector(s);
+
+/* ---------- চেইন সংজ্ঞা ---------- */
+const CHAIN_DEFS = [
+  { key: 'script_models', icon: '📝', title: 'স্ক্রিপ্ট (Gemini মডেল চেইন)', options: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-2.0-flash-lite'] },
+  { key: 'voice', icon: '🎙️', title: 'ভয়েস চেইন', options: ['cartesia_sonic3', 'edge_tts'] },
+  { key: 'visual', icon: '🖼️', title: 'ভিজ্যুয়াল চেইন', options: ['pixabay_video', 'pixabay_photo', 'pexels_photo', 'pollinations'] },
+  { key: 'music', icon: '🎵', title: 'গান চেইন', options: ['user_file', 'synth'] },
+];
+const DEFAULT_CHAINS = {
+  script_models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
+  voice: ['cartesia_sonic3', 'edge_tts'],
+  visual: ['pixabay_video', 'pixabay_photo', 'pollinations'],
+  music: ['user_file', 'synth'],
+};
+const MODULES = [
+  { key: 'sfx', label: 'এসএফএক্স (pop/ding/whoosh)' },
+  { key: 'subtitles', label: 'সাবটাইটেল/ক্যাপশন' },
+  { key: 'thumbnail', label: 'থাম্বনেইল' },
+];
+let chains = JSON.parse(JSON.stringify(DEFAULT_CHAINS));
+let disabled = {}; // key -> array of off values
+
+/* ---------- সেভ/লোড ---------- */
+function save() {
+  const st = { chains, disabled, form: { mode: $('#f-mode').value, minutes: $('#f-minutes').value, aspect: $('#f-aspect').value, aspectCustom: $('#f-aspect-custom').value, resolution: $('#f-resolution').value, kind: $('#f-kind').value, theme: $('#f-theme').value, music: $('#f-music').value, project: $('#f-project').value, topic: $('#f-topic').value, brief: $('#f-brief').value, script: $('#f-script').value, edgeVoice: $('#f-edge-voice').value, voicePreset: $('#f-voice-preset').value, voiceGap: $('#f-voice-gap').value } };
+  localStorage.setItem(LS, JSON.stringify(st));
+}
+function load() {
+  try {
+    const st = JSON.parse(localStorage.getItem(LS) || 'null');
+    if (!st) return;
+    if (st.chains) chains = { ...JSON.parse(JSON.stringify(DEFAULT_CHAINS)), ...st.chains };
+    if (st.disabled) disabled = st.disabled;
+    const f = st.form || {};
+    if (f.mode) $('#f-mode').value = f.mode;
+    if (f.minutes) $('#f-minutes').value = f.minutes;
+    if (f.aspect) { $('#f-aspect').value = f.aspect; $('#f-aspect-custom').style.display = f.aspect === 'custom' ? '' : 'none'; }
+    if (f.aspectCustom) $('#f-aspect-custom').value = f.aspectCustom;
+    if (f.resolution) $('#f-resolution').value = f.resolution;
+    if (f.kind) $('#f-kind').value = f.kind;
+    if (f.theme) $('#f-theme').value = f.theme;
+    if (f.music) $('#f-music').value = f.music;
+    if (f.project !== undefined) $('#f-project').value = f.project;
+    if (f.topic) $('#f-topic').value = f.topic;
+    if (f.brief) $('#f-brief').value = f.brief;
+    if (f.script) $('#f-script').value = f.script;
+    if (f.edgeVoice) $('#f-edge-voice').value = f.edgeVoice;
+    if (f.voicePreset) $('#f-voice-preset').value = f.voicePreset;
+    if (f.voiceGap) $('#f-voice-gap').value = f.voiceGap;
+  } catch (e) {}
+}
+
+/* ---------- চেইন UI ---------- */
+function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
+function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+
+function renderChains() {
+  const host = $('#chains'); host.innerHTML = '';
+  CHAIN_DEFS.forEach(def => {
+    const items = chains[def.key].map(v => ({ v, on: !(disabled[def.key] || []).includes(v) }));
+    const sec = document.createElement('div');
+    sec.innerHTML = `<h3 style="font-size:.95rem;margin:14px 0 4px;">${def.icon} ${def.title}</h3>
+      <ul class="chain" data-key="${def.key}"></ul>
+      <div class="row"><select class="add-sel" style="max-width:240px;"><option value="">— টুল বাছুন —</option>${def.options.map(o => `<option>${esc(o)}</option>`).join('')}</select><button class="add mini">➕ যোগ</button></div>`;
+    host.appendChild(sec);
+    const ul = sec.querySelector('ul');
+    items.forEach(({ v, on }) => ul.appendChild(chainItem(def.key, v, on)));
+    sec.querySelector('.add').addEventListener('click', () => {
+      const val = sec.querySelector('.add-sel').value || sec.querySelector('.add-sel').dataset.custom;
+      if (!val) return toast('টুল বাছুন');
+      if (chains[def.key].includes(val)) return toast('ইতিমধ্যে আছে');
+      chains[def.key].push(val); save(); renderChains(); toast('যোগ হয়েছে');
+    });
+    attachDrag(ul, def.key);
+  });
+}
+function chainItem(key, val, on) {
+  const li = document.createElement('li');
+  li.className = on ? '' : 'off';
+  li.dataset.val = val;
+  li.innerHTML = `<span class="drag">⠿</span>
+    <input type="text" value="${esc(val)}">
+    <button class="up mini" title="ওপরে">▲</button><button class="down mini" title="নিচে">▼</button>
+    <button class="tgl mini">${on ? '🔊' : '🔇'}</button><button class="rm mini danger">✕</button>`;
+  li.querySelector('input').addEventListener('input', (e) => { renameVal(key, val, e.target.value); val = e.target.value; li.dataset.val = val; save(); });
+  li.querySelector('.up').addEventListener('click', () => { moveItem(key, val, -1); save(); renderChains(); });
+  li.querySelector('.down').addEventListener('click', () => { moveItem(key, val, +1); save(); renderChains(); });
+  li.querySelector('.tgl').addEventListener('click', () => { toggleVal(key, val); save(); renderChains(); });
+  li.querySelector('.rm').addEventListener('click', () => { removeVal(key, val); save(); renderChains(); });
+  return li;
+}
+function renameVal(key, oldV, newV) { newV = newV.trim(); if (!newV || chains[key].includes(newV)) return; chains[key][chains[key].indexOf(oldV)] = newV; disabled[key] = (disabled[key] || []).filter(v => v !== newV); }
+function moveItem(key, val, dir) { const arr = chains[key]; const i = arr.indexOf(val); const j = i + dir; if (i < 0 || j < 0 || j >= arr.length) return; [arr[i], arr[j]] = [arr[j], arr[i]]; }
+function toggleVal(key, val) { disabled[key] = disabled[key] || []; const i = disabled[key].indexOf(val); i >= 0 ? disabled[key].splice(i, 1) : disabled[key].push(val); }
+function removeVal(key, val) { chains[key] = chains[key].filter(v => v !== val); }
+
+/* ডেস্কটপ ড্র্যাগ (মোবাইলে ▲▼ বাটন) */
+function attachDrag(ul, key) {
+  let dragging = null;
+  ul.querySelectorAll('li').forEach(li => {
+    li.setAttribute('draggable', 'true');
+    li.addEventListener('dragstart', () => { dragging = li; li.classList.add('dragging'); });
+    li.addEventListener('dragend', () => { li.classList.remove('dragging'); });
+    li.addEventListener('dragover', (e) => { e.preventDefault(); li.classList.add('drag-over'); });
+    li.addEventListener('dragleave', () => li.classList.remove('drag-over'));
+    li.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (!dragging || dragging === li) return;
+      const rect = li.getBoundingClientRect();
+      ul.insertBefore(dragging, (e.clientY - rect.top) > rect.height / 2 ? li.nextSibling : li);
+      chains[key] = [...ul.querySelectorAll('li')].map(x => x.querySelector('input').value.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&quot;/g, '"'));
+      save(); toast('অর্ডার পাল্টেছে');
+    });
+  });
+}
+
+/* ---------- মডিউল টগল ---------- */
+function renderModules() {
+  const host = $('#module-toggles'); host.innerHTML = '';
+  MODULES.forEach(m => {
+    const st = JSON.parse(localStorage.getItem(LS) || 'null') || {};
+    const val = (st.modules || {})[m.key];
+    const on = val === undefined ? true : !!val;
+    const div = document.createElement('div');
+    div.className = 'toggle';
+    div.innerHTML = `<span>${m.label}</span><span class="sw"><input type="checkbox" ${on ? 'checked' : ''}><i></i></span>`;
+    div.querySelector('input').addEventListener('change', (e) => { saveModules(m.key, e.target.checked); toast(e.target.checked ? 'চালু' : 'বন্ধ'); });
+    host.appendChild(div);
+  });
+}
+function saveModules(key, on) {
+  const st = JSON.parse(localStorage.getItem(LS) || '{}');
+  st.modules = st.modules || {}; st.modules[key] = on;
+  localStorage.setItem(LS, JSON.stringify(st));
+}
+function moduleStates() {
+  const st = JSON.parse(localStorage.getItem(LS) || 'null');
+  return (st && st.modules) || { sfx: true, subtitles: true, thumbnail: true };
+}
+
+/* ---------- কী টেবিল ---------- */
+const KEY_SECRETS = [
+  ['GEMINI_API_KEYS', 'Gemini (স্ক্রিপ্ট)', 'aistudio.google.com → Get API key'],
+  ['CARTESIA_API_KEYS', 'Cartesia (ক্লোন কণ্ঠ)', 'play.cartesia.ai → API Keys'],
+  ['CARTESIA_VOICE_ID(গুলো)', 'ক্লোন Voice ID', 'কমা দিয়ে একাধিক দিলে একটির সমস্যা হলে পরেরটি হবে'],
+  ['PIXABAY_API_KEYS', 'Pixabay (ভিজ্যুয়াল)', 'pixabay.com/api/docs → একাউন্টে Full key'],
+  ['PEXELS_API_KEYS', 'Pexels (বিকল্প ভিজ্যুয়াল)', 'pexels.com/api'],
+];
+function renderKeyTable() {
+  $('#key-table').innerHTML = KEY_SECRETS.map(([n, p, w]) =>
+    `<tr><td style="padding:7px 8px 7px 0;"><code>${n}</code></td><td style="color:var(--dim);font-size:.84rem;padding:7px 0;">${p} — ${w}</td></tr>`).join('');
+}
+
+/* ---------- এক্সপোর্ট ---------- */
+function enabledChain(key) { return chains[key].filter(v => !(disabled[key] || []).includes(v)); }
+function collectForm() {
+  const aspect = $('#f-aspect').value === 'custom' ? ($('#f-aspect-custom').value.trim() || '9:16') : $('#f-aspect').value;
+  return {
+    mode: $('#f-mode').value, minutes: parseFloat($('#f-minutes').value) || 1.5,
+    aspect, resolution: $('#f-resolution').value || '',
+    kind: $('#f-kind').value, theme: $('#f-theme').value, music: $('#f-music').value,
+    project: $('#f-project').value || '', topic: $('#f-topic').value || '',
+    brief: $('#f-brief').value || '', script: $('#f-script').value || '',
+  };
+}
+function makeRunSpec() {
+  const f = collectForm();
+  return { enabled: true, run_id: 'dash-' + Date.now().toString(36), ...f };
+}
+function makeConfig() {
+  const mod = moduleStates();
+  return {
+    note: 'docs/index.html ড্যাশবোর্ড থেকে তৈরি। API কী এখানে কখনো রাখবেন না।',
+    providers: {
+      script_models: enabledChain('script_models'),
+      voice: enabledChain('voice'),
+      visual: enabledChain('visual'),
+      music: enabledChain('music'),
+    },
+    defaults: { mode: $('#f-mode').value, minutes: parseFloat($('#f-minutes').value) || 1.5, aspect: collectForm().aspect, resolution: $('#f-resolution').value || '', kind: $('#f-kind').value, theme: $('#f-theme').value, music: $('#f-music').value },
+    modules: { sfx: mod.sfx !== false, subtitles: mod.subtitles !== false, thumbnail: mod.thumbnail !== false },
+    tts: { edge_voice: $('#f-edge-voice').value.trim() || 'bn-BD-NabanitaNeural', preset: $('#f-voice-preset').value, gap: Math.max(0, Math.min(2, parseFloat($('#f-voice-gap').value) || 0.25)) },
+  };
+}
+function download(name, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+$('#btn-run').addEventListener('click', () => { save(); download('run.spec.json', makeRunSpec()); toast('run.spec.json ডাউনলোড হয়েছে — এখন গাইড অনুযায়ী রিপোতে আপলোড করুন'); });
+$('#btn-config').addEventListener('click', () => { save(); download('workflow_config.json', makeConfig()); toast('config ডাউনলোড হয়েছে — রিপোর config/ ফোল্ডারে আপলোড করুন'); });
+$('#f-aspect').addEventListener('change', (e) => { $('#f-aspect-custom').style.display = e.target.value === 'custom' ? '' : 'none'; save(); });
+document.querySelectorAll('input,select,textarea').forEach(el => el.addEventListener('change', save));
+
+/* ---------- কী ফরম্যাটার ---------- */
+$('#key-format').addEventListener('click', () => {
+  const list = $('#key-input').value.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean);
+  $('#key-output').value = list.join(',');
+  $('#key-count').textContent = list.length ? `✅ ${list.length}টি কী — প্রস্তুত` : '';
+});
+
+/* ---------- রান-স্ট্যাটাস ---------- */
+$('#check-btn').addEventListener('click', async () => {
+  $('#monitor').textContent = 'যাচাই হচ্ছে...';
+  try {
+    const r = await fetch(`https://api.github.com/repos/${REPO}/actions/runs?per_page=5`);
+    const d = await r.json();
+    const runs = d.workflow_runs || [];
+    if (!runs.length) { $('#monitor').textContent = 'এখনও কোনো রান নেই।'; return; }
+    $('#monitor').textContent = runs.map(x =>
+      `${x.created_at}  ${x.name}\n  → ${x.status === 'completed' ? (x.conclusion === 'success' ? '✅ সফল' : '❌ ব্যর্থ: ' + x.conclusion) : '⏳ চলছে: ' + x.status}\n  ${x.html_url}`).join('\n\n');
+  } catch (e) { $('#monitor').textContent = '❌ পাওয়া যায়নি: ' + e.message; }
+});
+
+/* ---------- শুরু ---------- */
+load();
+renderChains();
+renderModules();
+renderKeyTable();
+fetch(`https://api.github.com/repos/${REPO}/contents/projects.json`)
+  .then(r => r.json())
+  .then(d => {
+    const p = JSON.parse(atob(String(d.content).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')));
+    $('#f-project').innerHTML = '<option value="">— নেই —</option>' + Object.keys(p).map(k => `<option>${esc(k)}</option>`).join('');
+    load();
+  }).catch(() => {});
+$('#check-repo').textContent = ` (${REPO})`;
+</script>
+</body>
+</html>

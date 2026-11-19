@@ -5,17 +5,24 @@ import { spawnSync } from 'node:child_process';
 const S = (k, d = '') => (process.env[k] ?? d).toString().trim();
 
 const SPEC = (() => { try { return JSON.parse(fs.readFileSync('data/run.spec.json', 'utf8')) || {}; } catch { return {}; } })();
+
+// ড্যাশবোর্ড থেকে আপডেট করা যায় এমন সেন্ট্রাল কনফিগ (কোড ছাড়াই পরিবর্তনযোগ্য)
+const J_ = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
+const WCFG = J_('config/workflow_config.json', {});
+const WCFGD = WCFG.defaults || {};
+const WCFGM = WCFG.modules || {};
+
 const cfgVal = (envKey, specKey, fallback, norm, valid) => {
   const raw = S(envKey);
-  let v = raw !== '' ? raw : (SPEC[specKey] ?? '');
+  let v = raw !== '' ? raw : (SPEC[specKey] ?? WCFGD[specKey] ?? '');
   if (norm) v = norm(String(v));
-  if (v === '' || v === undefined || v === null) v = fallback;
-  if (valid && !valid.includes(v)) v = fallback;
+  if (v === '' || v === undefined || v === null) v = WCFGD[specKey] ?? fallback;
+  if (valid && !valid.includes(v)) v = WCFGD[specKey] ?? fallback;
   return v;
 };
 const cfgNum = (envKey, specKey, fallback) => {
-  let v = parseFloat(S(envKey) !== '' ? S(envKey) : (SPEC[specKey] ?? ''));
-  if (!Number.isFinite(v)) v = parseFloat(SPEC[specKey]);
+  let v = parseFloat(S(envKey) !== '' ? S(envKey) : (SPEC[specKey] ?? WCFGD[specKey] ?? ''));
+  if (!Number.isFinite(v)) v = parseFloat(WCFGD[specKey]);
   if (!Number.isFinite(v)) v = fallback;
   return Math.max(0.25, Math.min(10, v));
 };
@@ -23,32 +30,52 @@ const cfgNum = (envKey, specKey, fallback) => {
 const CFG = {
   mode: cfgVal('IN_MODE', 'mode', 'draft', s => s.toLowerCase().trim(), ['script_only', 'voice_test', 'draft', 'full']),
   minutes: cfgNum('IN_MINUTES', 'minutes', 1.5),
-  aspect: cfgVal('IN_ASPECT', 'aspect', '9:16', s => s.trim(), ['9:16', '16:9', '1:1', '4:5']),
+  aspect: cfgVal('IN_ASPECT', 'aspect', '9:16', s => s.trim()),
+  resolution: cfgVal('IN_RESOLUTION', 'resolution', '', s => s.toLowerCase().trim(), ['', '480p', '720p', '1080p']),
   kind: cfgVal('IN_KIND', 'kind', 'B', s => s.toUpperCase().trim(), ['A', 'B', 'C']),
   theme: cfgVal('IN_THEME', 'theme', 'warm', s => s.toLowerCase().trim()),
   music: cfgVal('IN_MUSIC', 'music', 'auto', s => s.toLowerCase().trim(), ['auto', 'off', 'upbeat', 'calm']),
+  edgeVoice: S('EDGE_VOICE') || (WCFG.tts && WCFG.tts.edge_voice) || 'bn-BD-NabanitaNeural',
+  voicePreset: (S('TTS_PRESET') || (WCFG.tts && WCFG.tts.preset) || 'podcast').trim(),
+  voiceGap: (() => { const g = parseFloat(S('VOICE_GAP') ?? (WCFG.tts && WCFG.tts.gap)); return Number.isFinite(g) ? Math.max(0, Math.min(2, g)) : 0.25; })(),
   topic: cfgVal('IN_TOPIC', 'topic', ''),
   project: cfgVal('IN_PROJECT', 'project', ''),
   brief: cfgVal('IN_BRIEF', 'brief', ''),
   script: cfgVal('IN_SCRIPT', 'script', ''),
   runId: String(SPEC.run_id || 'manual'),
-  geminiKey: S('GEMINI_API_KEY'),
-  cartesiaKey: S('CARTESIA_API_KEY'),
   voiceId: S('CARTESIA_VOICE_ID'),
-  pixabayKey: S('PIXABAY_API_KEY'),
-  pexelsKey: S('PEXELS_API_KEY'),
+  voiceIds: `${S('CARTESIA_VOICE_IDS')},${S('CARTESIA_VOICE_ID')}`.split(/[\s,;]+/).map(s => s.trim()).filter(s => /^[a-zA-Z0-9-]{4,}$/.test(s)),
 };
 
-const J = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
+// এক সার্ভিসের জন্য অনেক কী: GEMINI_API_KEYS="k1,k2" বা নতুন লাইন দিয়ে। পুরনো একক GEMINI_API_KEY-ও চলবে।
+const keysOf = (multiEnv, singleEnv) => `${S(multiEnv)},${S(singleEnv)}`.split(/[\s,;]+/).map(s => s.trim()).filter(s => s.length > 8);
+const keyPools = {
+  gemini: keysOf('GEMINI_API_KEYS', 'GEMINI_API_KEY'),
+  cartesia: keysOf('CARTESIA_API_KEYS', 'CARTESIA_API_KEY'),
+  pixabay: keysOf('PIXABAY_API_KEYS', 'PIXABAY_API_KEY'),
+  pexels: keysOf('PEXELS_API_KEYS', 'PEXELS_API_KEY'),
+};
+CFG.geminiKeys = keyPools.gemini;
+CFG.cartesiaKeys = keyPools.cartesia;
+CFG.pixabayKeys = keyPools.pixabay;
+CFG.pexelsKeys = keyPools.pexels;
+CFG.geminiKey = CFG.geminiKeys[0] || '';
+CFG.cartesiaKey = CFG.cartesiaKeys[0] || '';
+CFG.pixabayKey = CFG.pixabayKeys[0] || '';
+CFG.pexelsKey = CFG.pexelsKeys[0] || '';
+
+const J = J_;
 const T = (f, d = '') => { try { return fs.readFileSync(f, 'utf8'); } catch { return d; } };
 const W = (f, c) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, c); };
 
-const providers = J('providers.json', {
+const providers = {
   script_models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
   voice: ['cartesia_sonic3', 'edge_tts'],
   visual: ['pixabay_video', 'pixabay_photo', 'pollinations'],
   music: ['user_file', 'synth'],
-});
+  ...J_('providers.json', {}),
+  ...(WCFG.providers || {}),
+};
 const presets = J('projects.json', {});
 const pronounce = J('pronounce.json', {});
 const projectTxt = T('project.txt', '');
@@ -64,6 +91,9 @@ const die = (m) => { log(`মারাত্মক ত্রুটি: ${m}`); p
 
 const ASPECTS = { '9:16': [1080, 1920], '16:9': [1920, 1080], '1:1': [1080, 1080], '4:5': [1080, 1350] };
 const FPS = 30;
+
+const keyOk = (pool) => Array.isArray(pool) && pool.length > 0;
+const keyLog = (pool, i, ok, msg = '') => log(`${ok ? '✔ কী চলেছে' : '✖ কী ব্যর্থ'} [${pool==='gemini'?'Gemini':pool==='pixabay'?'Pixabay':pool==='pexels'?'Pexels':'Cartesia'}] #${i + 1}/${keyPools[pool]?.length || 0}${msg ? ' — ' + msg : ''}`);
 
 const retry = async (n, fn, tag) => {
   let last;
@@ -92,26 +122,30 @@ function run(cmd, args, tag, ms = 600000) {
 
 let modelUsed = null;
 async function gemini(prompt, { json = false, temp = 0.8 } = {}) {
-  if (!CFG.geminiKey) throw new Error('GEMINI_API_KEY নেই');
+  if (!keyOk(CFG.geminiKeys)) throw new Error('GEMINI_API_KEY / GEMINI_API_KEYS কোনোটিই নেই');
   const models = (process.env.GEMINI_MODEL_CHAIN || providers.script_models.join(',')).split(',').map(s => s.trim()).filter(Boolean);
   let last = null;
   for (const model of models) {
-    for (let a = 1; a <= 2; a++) {
-      try {
-        const body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: temp, maxOutputTokens: 8192 } };
-        if (json) body.generationConfig.responseMimeType = 'application/json';
-        const r = await jfetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CFG.geminiKey}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-        });
-        const d = await r.json();
-        const text = (d.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
-        if (!text) throw new Error('খালি উত্তর (সম্ভবত সেফটি ব্লক)');
-        modelUsed = model;
-        return text;
-      } catch (e) {
-        last = e;
-        log(`Gemini ${model} চেষ্টা ${a}/2 ব্যর্থ: ${String(e).slice(0, 150)}`);
-        if (/HTTP 4(29|03|00)/.test(String(e)) && a === 1) break;
+    for (const key of CFG.geminiKeys) {
+      const ki = CFG.geminiKeys.indexOf(key);
+      for (let a = 1; a <= 2; a++) {
+        try {
+          const body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: temp, maxOutputTokens: 8192 } };
+          if (json) body.generationConfig.responseMimeType = 'application/json';
+          const r = await jfetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+          });
+          const d = await r.json();
+          const text = (d.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+          if (!text) throw new Error('খালি উত্তর (সম্ভবত সেফটি ব্লক)');
+          modelUsed = model;
+          keyLog('gemini', ki, true);
+          return text;
+        } catch (e) {
+          last = e;
+          keyLog('gemini', ki, false, String(e).slice(0, 150));
+          if (/HTTP 4(29|03|00)/.test(String(e))) break;
+        }
       }
     }
     log(`Gemini: মডেল ${model} থেকে পরেরটায় ফলব্যাক`);
@@ -189,27 +223,49 @@ function silences(file) {
 
 const ttsText = (t) => { let s = t; for (const [a, b] of Object.entries(pronounce)) s = s.split(a).join(b); return s; };
 
+// প্রফেশনাল ভয়েস-প্রিসেট: ডকুমেন্টারি/পডকাস্ট/নিউজ/কার্টুন-ব্যাখ্যা
+const VOICE_PRESETS = {
+  podcast:     { name: 'পডকাস্ট — উষ্ণ, আলাপের মতো', extra: { speed: 0.95 }},
+  documentary: { name: 'ডকুমেন্টারি — ধীর, গম্ভীর', extra: { speed: 0.88 }},
+  news:        { name: 'নিউজ — স্পষ্ট, দ্রুত', extra: { speed: 1.05 }},
+  natural:     { name: 'স্বাভাবিক', extra: {} },
+};
+
 async function voiceCartesia(text, file) {
-  if (!CFG.cartesiaKey) throw new Error('CARTESIA_API_KEY নেই');
-  if (!CFG.voiceId) throw new Error('CARTESIA_VOICE_ID নেই');
-  const body = { model_id: 'sonic-3', transcript: text, voice: CFG.voiceId, language: 'bn', output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 } };
-  if (process.env.CARTESIA_EXTRA) Object.assign(body, tryParseJson('{' + process.env.CARTESIA_EXTRA + '}'));
-  const r = await jfetch('https://api.cartesia.ai/tts/bytes', {
-    method: 'POST',
-    headers: { 'X-API-Key': CFG.cartesiaKey, 'Cartesia-Version': '2024-06-10', 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
-  if (fs.statSync(file).size < 2000) throw new Error('Cartesia অডিও খুব ছোট');
-  return file;
+  if (!keyOk(CFG.cartesiaKeys)) throw new Error('CARTESIA_API_KEY / CARTESIA_API_KEYS কোনোটিই নেই');
+  const voiceIds = CFG.voiceIds.length ? CFG.voiceIds : [CFG.voiceId];
+  if (!voiceIds[0]) throw new Error('CARTESIA_VOICE_ID(গুলো) নেই');
+  let last = null;
+  for (const vid of voiceIds) {
+    for (const key of CFG.cartesiaKeys) {
+      const ki = CFG.cartesiaKeys.indexOf(key);
+      try {
+        const preset = VOICE_PRESETS[CFG.voicePreset] || VOICE_PRESETS.podcast;
+        const body = { model_id: 'sonic-3', transcript: text, voice: vid, language: 'bn', ...preset.extra, output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 44100 } };
+        if (process.env.CARTESIA_EXTRA) Object.assign(body, tryParseJson('{' + process.env.CARTESIA_EXTRA + '}'));
+        const r = await jfetch('https://api.cartesia.ai/tts/bytes', {
+          method: 'POST',
+          headers: { 'X-API-Key': key, 'Cartesia-Version': '2024-06-10', 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
+        if (fs.statSync(file).size < 2000) throw new Error('Cartesia অডিও খুব ছোট');
+        keyLog('cartesia', ki, true);
+        return file;
+      } catch (e) { last = e; keyLog('cartesia', ki, false, String(e).slice(0, 150)); }
+    }
+  }
+  throw last || new Error('Cartesia সব কী/ভয়েস ব্যর্থ');
 }
 
 async function voiceEdge(text, file) {
   const inst = spawnSync('python3', ['-m', 'edge_tts', '--help'], { encoding: 'utf8', timeout: 60000 });
   if (inst.status !== 0) run('python3', ['-m', 'pip', 'install', '--quiet', 'edge-tts'], 'pip-edge-tts', 180000);
-  const v = process.env.EDGE_VOICE || 'bn-BD-NabanitaNeural';
+  const v = process.env.EDGE_VOICE || CFG.edgeVoice;
+  const preset = VOICE_PRESETS[CFG.voicePreset] || VOICE_PRESETS.podcast;
+  const rate = preset.extra.speed ? `--rate=${Math.round((preset.extra.speed - 1) * 100)}%` : '';
   W('/tmp/tts_input.txt', text);
-  run('python3', ['-m', 'edge_tts', `--voice=${v}`, '--file=/tmp/tts_input.txt', `--write-media=${file}`], 'edge-tts', 180000);
+  run('python3', ['-m', 'edge_tts', `--voice=${v}`, ...(rate ? [rate] : []), '--file=/tmp/tts_input.txt', `--write-media=${file}`], 'edge-tts', 180000);
   if (fs.statSync(file).size < 1000) throw new Error('edge-tts অডিও খুব ছোট');
   return file;
 }
@@ -251,7 +307,8 @@ async function buildVoice(scenes) {
           s.dur = Math.max(0.8, probeSec(f));
         }, `ভয়েস ${provider} দৃশ্য ${s.index}`);
       }
-      let acc = 0; scenes.forEach(s => { s.start = +acc.toFixed(2); acc += s.dur + 0.25; });
+      let acc = 0; scenes.forEach(s => { s.start = +acc.toFixed(2); acc += s.dur + CFG.voiceGap; });
+      log(`ভয়েস: প্রিসেট=${CFG.voicePreset}, দৃশ্য-গ্যাপ=${CFG.voiceGap} সেকেন্ড`);
       concatVoice(scenes, `${OUT}/voice_full.mp3`);
       log(`ভয়েস পথ: ${provider}${provider === 'cartesia_sonic3' ? ' (আপনার ক্লোন)' : ' (ফলব্যাক, ক্লোন নয়)'}, মোট ${acc.toFixed(1)} সেকেন্ড`);
       return { file: `${OUT}/voice_full.mp3`, path: provider, total: acc };
@@ -270,27 +327,45 @@ async function download(url, file) {
 }
 
 async function pixabay(q, file, wantVideo) {
-  if (!CFG.pixabayKey) throw new Error('PIXABAY_API_KEY নেই');
-  if (wantVideo) {
-    const r = await jfetch(`https://pixabay.com/api/videos/?key=${CFG.pixabayKey}&q=${encodeURIComponent(q)}&per_page=7&safesearch=true`);
-    const hits = (await r.json()).hits || [];
-    const v = hits.map(h => h.videos && (h.videos.medium || h.videos.small || h.videos.tiny)).filter(Boolean)[0];
-    if (!v) throw new Error('ভিডিও নেই');
-    return download(v.url, file);
+  if (!keyOk(CFG.pixabayKeys)) throw new Error('PIXABAY_API_KEY / PIXABAY_API_KEYS কোনোটিই নেই');
+  let last = null;
+  for (const key of CFG.pixabayKeys) {
+    const ki = CFG.pixabayKeys.indexOf(key);
+    try {
+      let url;
+      if (wantVideo) {
+        const r = await jfetch(`https://pixabay.com/api/videos/?key=${key}&q=${encodeURIComponent(q)}&per_page=7&safesearch=true`);
+        const hits = (await r.json()).hits || [];
+        const v = hits.map(h => h.videos && (h.videos.medium || h.videos.small || h.videos.tiny)).filter(Boolean)[0];
+        if (!v) throw new Error('ভিডিও নেই');
+        url = v.url;
+      } else {
+        const r = await jfetch(`https://pixabay.com/api/?key=${key}&q=${encodeURIComponent(q)}&per_page=7&image_type=photo&safesearch=true`);
+        const hits = (await r.json()).hits || [];
+        url = hits.map(h => h.largeImageURL || h.webformatURL).filter(Boolean)[0];
+        if (!url) throw new Error('ছবি নেই');
+      }
+      keyLog('pixabay', ki, true);
+      return download(url, file);
+    } catch (e) { last = e; keyLog('pixabay', ki, false, String(e).slice(0, 120)); }
   }
-  const r = await jfetch(`https://pixabay.com/api/?key=${CFG.pixabayKey}&q=${encodeURIComponent(q)}&per_page=7&image_type=photo&safesearch=true`);
-  const hits = (await r.json()).hits || [];
-  const u = hits.map(h => h.largeImageURL || h.webformatURL).filter(Boolean)[0];
-  if (!u) throw new Error('ছবি নেই');
-  return download(u, file);
+  throw last || new Error('Pixabay সব কী ব্যর্থ');
 }
 
 async function pexelsPhoto(q, file) {
-  if (!CFG.pexelsKey) throw new Error('PEXELS_API_KEY নেই');
-  const r = await jfetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=5`, { headers: { Authorization: CFG.pexelsKey } });
-  const u = ((await r.json()).photos || []).map(p => p.src?.large2x || p.src?.large).filter(Boolean)[0];
-  if (!u) throw new Error('ছবি নেই');
-  return download(u, file);
+  if (!keyOk(CFG.pexelsKeys)) throw new Error('PEXELS_API_KEY / PEXELS_API_KEYS কোনোটিই নেই');
+  let last = null;
+  for (const key of CFG.pexelsKeys) {
+    const ki = CFG.pexelsKeys.indexOf(key);
+    try {
+      const r = await jfetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=5`, { headers: { Authorization: key } });
+      const u = ((await r.json()).photos || []).map(p => p.src?.large2x || p.src?.large).filter(Boolean)[0];
+      if (!u) throw new Error('ছবি নেই');
+      keyLog('pexels', ki, true);
+      return download(u, file);
+    } catch (e) { last = e; keyLog('pexels', ki, false, String(e).slice(0, 120)); }
+  }
+  throw last || new Error('Pexels সব কী ব্যর্থ');
 }
 
 async function pollinations(q, file, w, h) {
@@ -330,6 +405,7 @@ function buildMusic(total, mood) {
 }
 
 function buildSfx() {
+  if (WCFGM.sfx === false) { log('এসএফএক্স: বন্ধ (কনফিগ)'); return; }
   if (process.env.PIPE_DRY === '1') return;
   fs.mkdirSync(`${OUT}/sfx`, { recursive: true });
   if (fs.existsSync(`${OUT}/sfx/pop.wav`)) return;
@@ -397,14 +473,23 @@ const main = async () => {
   log(`দৃশ্য: ${rawScenes.length}টি`);
 
   const voice = await buildVoice(rawScenes);
-  const cues = buildCues(rawScenes, plan.keywordsRed || [], plan.keywordsGreen || []);
+  const cues = WCFGM.subtitles === false ? [] : buildCues(rawScenes, plan.keywordsRed || [], plan.keywordsGreen || []);
   W(`${OUT}/subs.srt`, cues.map((c, i) => `${i + 1}\n${fmt(c.start)} --> ${fmt(c.start + c.dur)}\n${c.text}\n`).join('\n'));
-  log(`SRT তৈরি: ${cues.length} ক্যাপশন`);
+  log(`SRT ${WCFGM.subtitles === false ? 'বন্ধ (কনফিগ)' : `তৈরি: ${cues.length} ক্যাপশন`}`);
   if (CFG.mode === 'voice_test') { log('মোড voice_test — রেন্ডার বাদ, শেষ'); return; }
 
-  const [Wd, Hd] = ASPECTS[CFG.aspect];
+  const [Wd, Hd] = /^\d+x\d+$/.test(CFG.aspect)
+    ? CFG.aspect.split('x').map(Number)
+    : ASPECTS[CFG.aspect];
+  const RES_LONG = { '480p': 854, '720p': 1280, '1080p': 1920 };
   const sc = CFG.mode === 'draft' ? 0.5 : 1;
-  const RW = Math.round(Wd * sc / 2) * 2, RH = Math.round(Hd * sc / 2) * 2;
+  let RW = Math.round(Wd * sc / 2) * 2, RH = Math.round(Hd * sc / 2) * 2;
+  if (CFG.resolution) {
+    const target = RES_LONG[CFG.resolution], long = Math.max(Wd, Hd);
+    const f = sc * (target / long);
+    RW = Math.round(Wd * f / 2) * 2; RH = Math.round(Hd * f / 2) * 2;
+  }
+  log(`রেন্ডার সাইজ: ${RW}x${RH}${CFG.resolution ? ` (লক্ষ্য ${CFG.resolution})` : ''}`);
 
   await buildVisuals(rawScenes, RW, RH);
   const music = buildMusic(voice.total, plan.musicMood || 'upbeat');
@@ -432,7 +517,9 @@ const main = async () => {
     run('npx', renderArgs('35', ['--concurrency', '1', '--jpeg-quality', '60']), 'remotion-render-fallback', 2400000);
     log(`ফলব্যাক রেন্ডার শেষ: ${outV}`);
   }
-  try {
+  if (WCFGM.thumbnail === false) {
+    log('থাম্বনেইল বন্ধ (কনফিগ)');
+  } else try {
     run('npx', ['remotion', 'still', 'src/index.jsx', 'Thumb', `${OUT}/thumb.jpg`, '--props', `${OUT}/props.json`, '--quality', '90', '--log', 'error'], 'remotion-thumb', 240000);
     log('থাম্বনেইল তৈরি');
   } catch (e) { log(`থাম্বনেইল ব্যর্থ: ${String(e).slice(0, 200)}`); }
