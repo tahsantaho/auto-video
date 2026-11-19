@@ -295,7 +295,8 @@ async function buildVoice(scenes) {
     let start = 0;
     scenes.forEach((s, i) => { s.start = start; s.dur = Math.max(0.8, bounds[i] - start); start = bounds[i]; });
     log(`ভয়েস: নিজের অডিও ${total.toFixed(1)} সেকেন্ড, বিরতি দেখে দৃশ্য-সময় মেলানো`);
-    return { file: 'assets/voice.mp3', path: 'user_audio', total: Math.max(total, start) };
+    fs.copyFileSync('assets/voice.mp3', `${PUB}/voice_full.mp3`);
+    return { file: 'voice_full.mp3', path: 'user_audio', total: Math.max(total, start) };
   }
 
   if (scenes.length > 200) throw new Error('অস্বাভাবিক দৃশ্য-সংখ্যা');
@@ -311,8 +312,9 @@ async function buildVoice(scenes) {
       let acc = 0; scenes.forEach(s => { s.start = +acc.toFixed(2); acc += s.dur + CFG.voiceGap; });
       log(`ভয়েস: প্রিসেট=${CFG.voicePreset}, দৃশ্য-গ্যাপ=${CFG.voiceGap} সেকেন্ড`);
       concatVoice(scenes, `${OUT}/voice_full.mp3`);
+      fs.copyFileSync(`${OUT}/voice_full.mp3`, `${PUB}/voice_full.mp3`);
       log(`ভয়েস পথ: ${provider}${provider === 'cartesia_sonic3' ? ' (আপনার ক্লোন)' : ' (ফলব্যাক, ক্লোন নয়)'}, মোট ${acc.toFixed(1)} সেকেন্ড`);
-      return { file: `${OUT}/voice_full.mp3`, path: provider, total: acc };
+      return { file: 'voice_full.mp3', path: provider, total: acc };
     } catch (e) { log(`ভয়েস পথ ${provider} ব্যর্থ: ${String(e).slice(0, 250)}`); }
   }
   throw new Error('কোনো ভয়েস পথই চলেনি');
@@ -503,6 +505,7 @@ const main = async () => {
 
   const props = {
     fps: FPS, width: RW, height: RH, kind: plan.kind, theme: plan.theme,
+    narration: voice.file,
     music, scenes: rawScenes,
     thumb: { text: plan.thumbText || plan.title || 'ভিডিও', asset: (rawScenes.find(s => s.assetType === 'photo') || {}).asset || null, kind: plan.kind },
   };

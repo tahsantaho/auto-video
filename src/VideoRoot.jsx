@@ -64,7 +64,7 @@ const Scene = ({ scene }) => {
   );
 };
 
-export default function VideoRoot({ scenes, music, kind, theme }) {
+export default function VideoRoot({ scenes, music, narration, kind, theme }) {
   const list = Array.isArray(scenes) ? scenes : [];
   const th = THEMES[theme] || THEMES.warm;
   const k = KINDS[kind] || KINDS.B;
@@ -73,6 +73,7 @@ export default function VideoRoot({ scenes, music, kind, theme }) {
       {list.map((s, i) => (
         <Scene key={i} scene={{ ...s, indexMod: i * 3, theme: th, font: k.fonts[i % k.fonts.length], capPos: k.capPos }} />
       ))}
+      {narration ? <Audio src={staticFile(narration)} /> : null}
       {music ? <Audio src={staticFile(music.file)} volume={music.volume} loop /> : null}
     </AbsoluteFill>
   );
