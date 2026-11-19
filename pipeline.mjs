@@ -229,14 +229,28 @@ async function openrouter(prompt, opts = {}) {
 
 async function pollinationsText(prompt, opts = {}) {
   const body = { model: 'openai', temperature: opts.temp ?? 0.8, messages: [{ role: 'user', content: prompt }] };
-  const r = await jfetch('https://text.pollinations.ai/openai', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  }, 90000);
-  let text = (await r.text()).trim();
-  try { const d = JSON.parse(text); text = (d.choices?.[0]?.message?.content || '').trim() || text; } catch {}
-  if (!text) throw new Error('পোলিনেশনস খালি উত্তর');
-  modelUsed = 'pollinations:openai';
-  return text;
+  const payload = JSON.stringify(body);
+  let last = null;
+  for (let a = 1; a <= 3; a++) {
+    try {
+      const r = await jfetch('https://text.pollinations.ai/openai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload,
+      }, 90000);
+      let text = (await r.text()).trim();
+      try { const d = JSON.parse(text); text = (d.choices?.[0]?.message?.content || '').trim() || text; } catch {}
+      if (!text) throw new Error('পোলিনেশনস খালি উত্তর');
+      modelUsed = 'pollinations:openai';
+      return text;
+    } catch (e) {
+      last = e;
+      if (!/HTTP 402/.test(String(e)) || a === 3) break;
+      const ra = String(e).match(/Retry after (\d+)s/i);
+      const sec = Math.min(70, (ra ? +ra[1] : 45) + 5);
+      log(`পোলিনেশনস ফ্রি-সীমা — ${sec} সেকেন্ড অপেক্ষা করে আবার (দৃষ্টান্ত ${a}/2)`);
+      await waitMs(sec * 1000);
+    }
+  }
+  throw last || new Error('পোলিনেশনস ব্যর্থ');
 }
 
 async function llm(prompt, opts = {}) {
@@ -306,9 +320,13 @@ async function buildScript() {
   log(`স্ক্রিপ্ট: টপিক থেকে লেখা হচ্ছে (Gemini, কথ্য বাংলা, ${kind})`);
   let narration = await llm(
     `${projectTxt}\n\nটপিক: ${CFG.topic || 'রোজকার জীবনে কাজে লাগে এমন একটি চমকপ্রদ তথ্য'}\nটার্গেট: আনুমানিক ${targetWords} শব্দ, একটানা প্যারাগ্রাফ।\nউচ্চারণ-তালিকা (ইংরেজি শব্দ ঠিক এভাবে বাংলা হরফে লিখবে): ${prons || 'নেই'}\nধরন ${kind}: ${kind === 'A' ? 'সহজ টিউটোরিয়াল, ধাপে ধাপে, উদাহরণসহ' : kind === 'C' ? 'তথ্য/ম্যাপ/সংখ্যাভিত্তিক, আকর্ষণীয় তথ্য-উপস্থাপনা' : 'গল্পের ছলে ব্যাখ্যা, কুইজ/চ্যালেঞ্জ আবহ'}।\n${CFG.brief ? 'অতিরিক্ত নির্দেশ: ' + CFG.brief + '\n' : ''}শুধু স্ক্রিপ্ট লেখো — শিরোনাম, মার্কডাউন, কমেন্ট, দৃশ্য-নাম্বার কিছুই নয়। মুখে বলার মতো স্বাভাবিক, আবেগ আছে, এআই-সুলভ খাঁটি-বাক্য নয়।`);
-  for (let i = 1; i <= 3; i++) {
-    const rev = await llm(`তুমি কড়া সম্পাদক। নিচের বাংলা ভয়েসওভার স্ক্রিপ্টে বানান, ব্যাকরণ, ভাঙা বাক্য ও এআই-সুলভ ভাষা ঠিক করো। মানে ও দৈর্ঘ্য কাছাকাছি রাখবে, কথ্য স্বাভাবিক রাখবে। শুধু চূড়ান্ত স্ক্রিপ্ট লিখবে।\n\nরিভিউ ${i}/3\n\n${narration}`, { temp: 0.5 });
-    if (rev && rev.length >= narration.length * 0.6) { narration = rev; log(`স্ক্রিপ্ট রিভিউ ${i}/3 প্রয়োগ`); }
+  if (/^gemini/.test(String(modelUsed))) {
+    for (let i = 1; i <= 3; i++) {
+      const rev = await llm(`তুমি কড়া সম্পাদক। নিচের বাংলা ভয়েসওভার স্ক্রিপ্টে বানান, ব্যাকরণ, ভাঙা বাক্য ও এআই-সুলভ ভাষা ঠিক করো। মানে ও দৈর্ঘ্য কাছাকাছি রাখবে, কথ্য স্বাভাবিক রাখবে। শুধু চূড়ান্ত স্ক্রিপ্ট লিখবে।\n\nরিভিউ ${i}/3\n\n${narration}`, { temp: 0.5 });
+      if (rev && rev.length >= narration.length * 0.6) { narration = rev; log(`স্ক্রিপ্ট রিভিউ ${i}/3 প্রয়োগ`); }
+    }
+  } else {
+    log(`ফলব্যাক প্রোভাইডার (${modelUsed}) — কোটা বাঁচাতে রিভিউ ৩-ধাপ স্কিপ`);
   }
   const planP = await llm(`${planPrompt(kind, theme)}\n\nস্ক্রিপ্ট (শব্দ বদল নয়, শুধু ভাগ):\n${narration}`, { json: true, temp: 0.4 });
   return { narration, ...tryParseJson(planP), theme, kind };
