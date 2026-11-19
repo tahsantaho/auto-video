@@ -141,12 +141,14 @@ export default function Effect({ spec, atGlobal, scene }) {
     : spec === 'map' ? effects.map
     : null;
   if (!fn) return null;
+  const sfxFor = spec.startsWith('icon') || spec.startsWith('stamp') ? 'pop'
+    : spec === 'quiz' ? 'ding'
+    : spec.startsWith('counter') ? 'whoosh'
+    : spec.startsWith('bar') || spec.startsWith('slider') || spec === 'map' ? 'click'
+    : null;
   return (
     <>
-      {local < 3 && (spec.startsWith('icon') || spec.startsWith('stamp')) ? (
-        <Audio src={staticFile('sfx/pop.wav')} volume={0.5} />
-      ) : null}
-      {local < 3 && spec === 'quiz' ? <Audio src={staticFile('sfx/ding.wav')} volume={0.4} /> : null}
+      {local < 3 && sfxFor ? <Audio src={staticFile(`sfx/${sfxFor}.wav`)} volume={sfxFor === 'pop' ? 0.5 : 0.45} /> : null}
       {fn({ spec, f: local, fps })}
     </>
   );

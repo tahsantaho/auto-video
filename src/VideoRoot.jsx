@@ -3,6 +3,7 @@ import { AbsoluteFill, Audio, Img, interpolate, OffthreadVideo, Sequence, static
 import { KINDS, THEMES } from './presets.js';
 import Captions from './components/Captions.jsx';
 import Effect from './components/Effects.jsx';
+import { CodeBackground, CodeScene } from './components/CodeCards.jsx';
 
 const TRANS = 10;
 
@@ -45,33 +46,36 @@ const Vignette = () => (
   }} />
 );
 
-const Scene = ({ scene }) => {
+const Scene = ({ scene, iconPref }) => {
   const f = useCurrentFrame();
   const { fps } = useVideoConfig();
   const fadeIn = interpolate(f, [0, TRANS], [0, 1], { extrapolateRight: 'clamp' });
   const slide = interpolate(f, [0, TRANS], [40, 0], { extrapolateRight: 'clamp' });
+  const code = scene.assetType === 'code';
   return (
     <Sequence from={Math.max(0, Math.round((scene.start || 0) * fps))} durationInFrames={Math.max(2, Math.ceil(scene.dur * fps)) + TRANS}>
-      <AbsoluteFill style={{ opacity: fadeIn, transform: `translateX(${slide}px)` }}>
-        <Background scene={scene} />
-        <Vignette />
+      <AbsoluteFill style={{ opacity: fadeIn, transform: code ? 'none' : `translateX(${slide}px)` }}>
+        {code ? <CodeBackground scene={scene} th={scene.theme} index={scene.index} /> : <Background scene={scene} />}
+        {code ? <CodeScene scene={scene} th={scene.theme} iconPref={iconPref} /> : null}
+        {code ? null : <Vignette />}
         <Captions scene={scene} />
         {scene.effects.map((e, i) => (
           <Effect key={i} spec={e.spec} atGlobal={e.at} scene={scene} />
         ))}
       </AbsoluteFill>
+      {f < 3 ? <Audio src={staticFile('sfx/whoosh.wav')} volume={scene.index === 0 ? 0.25 : 0.4} /> : null}
     </Sequence>
   );
 };
 
-export default function VideoRoot({ scenes, music, narration, kind, theme }) {
+export default function VideoRoot({ scenes, music, narration, kind, theme, iconPref }) {
   const list = Array.isArray(scenes) ? scenes : [];
   const th = THEMES[theme] || THEMES.warm;
   const k = KINDS[kind] || KINDS.B;
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {list.map((s, i) => (
-        <Scene key={i} scene={{ ...s, indexMod: i * 3, theme: th, font: k.fonts[i % k.fonts.length], capPos: k.capPos }} />
+        <Scene key={i} scene={{ ...s, indexMod: i * 3, theme: th, font: k.fonts[i % k.fonts.length], capPos: k.capPos }} iconPref={iconPref} />
       ))}
       {narration ? <Audio src={staticFile(narration)} /> : null}
       {music ? <Audio src={staticFile(music.file)} volume={music.volume} loop /> : null}
