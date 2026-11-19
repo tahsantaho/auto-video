@@ -1,0 +1,12 @@
+{
+  "mode": "draft",
+  "aspect": "9:16",
+  "kind": "B",
+  "theme": "warm",
+  "voicePath": "cartesia_sonic3",
+  "geminiModel": "pollinations:openai",
+  "totalSec": 50.6,
+  "visual": "code",
+  "scenes": 9,
+  "music": "music.mp3"
+}
